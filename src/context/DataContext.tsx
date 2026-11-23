@@ -1,28 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  EmailAuthProvider,
-  onAuthStateChanged,
-  reauthenticateWithCredential,
-  sendEmailVerification,
-  signInWithEmailAndPassword,
-  signOut,
-  updatePassword,
-  User,
-} from 'firebase/auth';
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch,
-} from 'firebase/firestore';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   Banner,
@@ -37,13 +13,6 @@ import {
   VisitorEvent,
 } from '../types';
 import {
-  auth,
-  BOOTSTRAPPED_ADMIN_EMAIL,
-  db,
-  handleFirestoreError,
-  OperationType,
-} from '../lib/firebase';
-import {
   DEFAULT_BANNERS,
   DEFAULT_PROJECTS,
   DEFAULT_SETTINGS,
@@ -56,15 +25,59 @@ import {
   saveSupabaseConfig,
 } from '../lib/supabase';
 
-function toIso(val: unknown): string {
-  if (!val) return new Date().toISOString();
-  if (val instanceof Timestamp) return val.toDate().toISOString();
-  if (typeof val === 'string') return val;
-  if (typeof val === 'object' && 'seconds' in (val as Record<string, unknown>)) {
-    const secs = Number((val as { seconds: number }).seconds);
-    return new Date(secs * 1000).toISOString();
+const LOCAL_STORE_KEY = 'mjlab_local_store_v1';
+const ADMIN_PASSCODE_KEY = 'mjlab_admin_passcode';
+const ADMIN_SESSION_KEY = 'mjlab_admin_session';
+const DEFAULT_ADMIN_PASSWORD = 'mjlab2026';
+
+interface LocalStoreData {
+  projects: Project[];
+  banners: Banner[];
+  settings: WebsiteSettings;
+  team: TeamMember[];
+  contacts: ContactMessage[];
+  visitors: VisitorEvent[];
+  contactClicks: ContactClick[];
+  orders: OrderRequest[];
+}
+
+function readLocalStore(): LocalStoreData {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<LocalStoreData>;
+      return {
+        projects: parsed.projects || DEFAULT_PROJECTS,
+        banners: parsed.banners || DEFAULT_BANNERS,
+        settings: parsed.settings || DEFAULT_SETTINGS,
+        team: parsed.team || DEFAULT_TEAM,
+        contacts: parsed.contacts || [],
+        visitors: parsed.visitors || [],
+        contactClicks: parsed.contactClicks || [],
+        orders: parsed.orders || [],
+      };
+    }
+  } catch {
+    // ignore
   }
-  return new Date().toISOString();
+  return {
+    projects: DEFAULT_PROJECTS,
+    banners: DEFAULT_BANNERS,
+    settings: DEFAULT_SETTINGS,
+    team: DEFAULT_TEAM,
+    contacts: [],
+    visitors: [],
+    contactClicks: [],
+    orders: [],
+  };
+}
+
+function writeLocalStore(data: LocalStoreData): void {
+  try {
+    localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(data));
+  } catch {
+    // ignore quota errors
+  }
 }
 
 function makeSafeId(prefix: string): string {
@@ -102,19 +115,20 @@ function getOrCreateVisitorHash(): { hash: string; isFirstEver: boolean } {
 }
 
 interface DataContextValue {
-  // Auth
-  user: User | null;
+  // Auth (Password-Only)
   authReady: boolean;
   isAdmin: boolean;
-  adminLoginPassword: (password: string, adminEmail?: string) => Promise<void>;
-  sendAdminVerification: () => Promise<void>;
+  adminDisplayName: string;
+  adminLoginPassword: (password: string) => Promise<void>;
   adminLogout: () => Promise<void>;
   adminChangePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 
-  // Backend Mode
-  backendMode: 'firebase' | 'supabase';
+  // Supabase Backend Status & Config
+  supabaseConnected: boolean;
+  hasWorkerRole: boolean;
   supabaseConfig: SupabaseConnectionConfig;
-  connectSupabase: (url: string, anonKey: string) => Promise<void>;
+  supabaseError: string;
+  connectSupabase: (url: string, anonKey: string, roleKey?: string) => Promise<void>;
   disconnectSupabase: () => void;
   seedSupabaseData: () => Promise<void>;
   syncingSeed: boolean;
@@ -151,17 +165,26 @@ interface DataContextValue {
 
   // Admin CRUD
   addProject: (payload: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateProject: (id: string, payload: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
+  updateProject: (
+    id: string,
+    payload: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
   addBanner: (payload: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateBanner: (id: string, payload: Partial<Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
+  updateBanner: (
+    id: string,
+    payload: Partial<Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
   deleteBanner: (id: string) => Promise<void>;
 
   saveSettings: (payload: Partial<WebsiteSettings>) => Promise<void>;
 
   addTeamMember: (payload: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateTeamMember: (id: string, payload: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
+  updateTeamMember: (
+    id: string,
+    payload: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
   deleteTeamMember: (id: string) => Promise<void>;
 
   markContactRead: (id: string, status: 'Read' | 'Unread') => Promise<void>;
@@ -174,66 +197,135 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | null>(null);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [isAdminDoc, setIsAdminDoc] = useState(false);
-
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConnectionConfig>(() =>
-    getSavedSupabaseConfig()
-  );
-  const supabaseClient: SupabaseClient | null = useMemo(
-    () => createSupabaseClient(supabaseConfig),
-    [supabaseConfig]
-  );
-  const backendMode: 'firebase' | 'supabase' = supabaseClient ? 'supabase' : 'firebase';
-
-  const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
-  const [banners, setBanners] = useState<Banner[]>(DEFAULT_BANNERS);
-  const [settings, setSettings] = useState<WebsiteSettings>(DEFAULT_SETTINGS);
-  const [team, setTeam] = useState<TeamMember[]>(DEFAULT_TEAM);
-
-  const [contacts, setContacts] = useState<ContactMessage[]>([]);
-  const [visitors, setVisitors] = useState<VisitorEvent[]>([]);
-  const [contactClicks, setContactClicks] = useState<ContactClick[]>([]);
-  const [orders, setOrders] = useState<OrderRequest[]>([]);
-
-  const [supabaseAdminAuth, setSupabaseAdminAuth] = useState<boolean>(() => {
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem('mjlab_sb_admin_auth') === '1';
+      return Boolean(sessionStorage.getItem(ADMIN_SESSION_KEY));
     } catch {
       return false;
     }
   });
+  const [adminToken, setAdminToken] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem(ADMIN_SESSION_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConnectionConfig>(() =>
+    getSavedSupabaseConfig()
+  );
+  const [hasWorkerRole, setHasWorkerRole] = useState(false);
+  const [hasWorkerAuth, setHasWorkerAuth] = useState(false);
+  const [supabaseError, setSupabaseError] = useState('');
+
+  // Public Supabase client (anon key)
+  const supabaseAnonClient: SupabaseClient | null = useMemo(
+    () => createSupabaseClient(supabaseConfig, false),
+    [supabaseConfig]
+  );
+
+  // Admin Supabase client (uses roleKey if entered locally, otherwise anonKey)
+  const supabaseAdminClient: SupabaseClient | null = useMemo(
+    () => createSupabaseClient(supabaseConfig, true),
+    [supabaseConfig]
+  );
+
+  const supabaseConnected = Boolean(supabaseAnonClient);
+
+  const initialLocal = useMemo(() => readLocalStore(), []);
+  const [projects, setProjects] = useState<Project[]>(initialLocal.projects);
+  const [banners, setBanners] = useState<Banner[]>(initialLocal.banners);
+  const [settings, setSettings] = useState<WebsiteSettings>(initialLocal.settings);
+  const [team, setTeam] = useState<TeamMember[]>(initialLocal.team);
+  const [contacts, setContacts] = useState<ContactMessage[]>(initialLocal.contacts);
+  const [visitors, setVisitors] = useState<VisitorEvent[]>(initialLocal.visitors);
+  const [contactClicks, setContactClicks] = useState<ContactClick[]>(initialLocal.contactClicks);
+  const [orders, setOrders] = useState<OrderRequest[]>(initialLocal.orders);
 
   const [loadingData, setLoadingData] = useState(true);
   const [syncingSeed, setSyncingSeed] = useState(false);
-  const seededFirestoreRef = useRef(false);
   const visitRecordedRef = useRef(false);
+  const autoSeededRef = useRef(false);
 
-  const isAdmin = useMemo(() => {
-    if (backendMode === 'supabase') return supabaseAdminAuth;
-    if (!user) return false;
-    if (user.email === BOOTSTRAPPED_ADMIN_EMAIL && user.emailVerified) return true;
-    return isAdminDoc && user.emailVerified;
-  }, [backendMode, supabaseAdminAuth, user, isAdminDoc]);
+  // Persist local store whenever offline/pre-Supabase state updates
+  const persistLocal = useCallback(
+    (patch: Partial<LocalStoreData>) => {
+      const current = readLocalStore();
+      const next: LocalStoreData = {
+        projects: patch.projects ?? current.projects,
+        banners: patch.banners ?? current.banners,
+        settings: patch.settings ?? current.settings,
+        team: patch.team ?? current.team,
+        contacts: patch.contacts ?? current.contacts,
+        visitors: patch.visitors ?? current.visitors,
+        contactClicks: patch.contactClicks ?? current.contactClicks,
+        orders: patch.orders ?? current.orders,
+      };
+      writeLocalStore(next);
+    },
+    []
+  );
 
-  // Listen to Firebase Auth state
+  // Cross-tab sync when Supabase is not yet connected
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser && currentUser.email !== BOOTSTRAPPED_ADMIN_EMAIL) {
-        try {
-          const snap = await getDoc(doc(db, 'admins', currentUser.uid));
-          setIsAdminDoc(snap.exists() && snap.data()?.role === 'admin');
-        } catch {
-          setIsAdminDoc(false);
-        }
-      } else {
-        setIsAdminDoc(false);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LOCAL_STORE_KEY && !supabaseConnected) {
+        const fresh = readLocalStore();
+        setProjects(fresh.projects);
+        setBanners(fresh.banners);
+        setSettings(fresh.settings);
+        setTeam(fresh.team);
+        setContacts(fresh.contacts);
+        setVisitors(fresh.visitors);
+        setContactClicks(fresh.contactClicks);
+        setOrders(fresh.orders);
       }
-      setAuthReady(true);
-    });
-    return () => unsub();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [supabaseConnected]);
+
+  // Discover Cloudflare Worker /api/config automatically if deployed on Workers
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const cfg = (await res.json()) as {
+              supabaseUrl?: string;
+              supabaseAnonKey?: string;
+              hasWorkerRole?: boolean;
+              hasWorkerAuth?: boolean;
+            };
+            if (!active) return;
+            setHasWorkerRole(Boolean(cfg.hasWorkerRole));
+            setHasWorkerAuth(Boolean(cfg.hasWorkerAuth));
+            if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+              const merged: SupabaseConnectionConfig = {
+                url: cfg.supabaseUrl,
+                anonKey: cfg.supabaseAnonKey,
+                roleKey: getSavedSupabaseConfig().roleKey || '',
+                enabled: true,
+              };
+              saveSupabaseConfig(merged);
+              setSupabaseConfig(merged);
+            }
+          }
+        }
+      } catch {
+        // Not running on Worker backend, continue with env/localStorage config
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Sync <title> and favicon dynamically from settings
@@ -250,578 +342,294 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [settings.siteName, settings.tagline, settings.faviconUrl]);
 
-  // Auto-seed Firestore once if admin logs in and collections are empty
-  const seedFirestoreIfEmpty = useCallback(async () => {
-    if (seededFirestoreRef.current || !isAdmin || backendMode !== 'firebase') return;
-    seededFirestoreRef.current = true;
-    try {
-      const siteSnap = await getDoc(doc(db, 'settings', 'site'));
-      if (siteSnap.exists()) return;
-
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'settings', 'site'), {
-        siteName: DEFAULT_SETTINGS.siteName,
-        tagline: DEFAULT_SETTINGS.tagline,
-        description: DEFAULT_SETTINGS.description,
-        theme: DEFAULT_SETTINGS.theme,
-        logoUrl: DEFAULT_SETTINGS.logoUrl,
-        faviconUrl: DEFAULT_SETTINGS.faviconUrl,
-        whatsappNumber: DEFAULT_SETTINGS.whatsappNumber,
-        aboutTitle: DEFAULT_SETTINGS.aboutTitle,
-        aboutDescription: DEFAULT_SETTINGS.aboutDescription,
-        footerText: DEFAULT_SETTINGS.footerText,
-        socialLinks: DEFAULT_SETTINGS.socialLinks,
-        updatedAt: serverTimestamp(),
+  // Helper to call Cloudflare Worker Admin proxy when Worker Role Key is configured
+  const workerAdminRequest = useCallback(
+    async (endpoint: string, options?: RequestInit) => {
+      const res = await fetch(endpoint, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken,
+          ...(options?.headers || {}),
+        },
       });
-
-      for (const proj of DEFAULT_PROJECTS) {
-        batch.set(doc(db, 'projects', proj.id), {
-          name: proj.name,
-          description: proj.description,
-          category: proj.category,
-          imageUrl: proj.imageUrl,
-          demoUrl: proj.demoUrl,
-          whatsappUrl: proj.whatsappUrl,
-          status: proj.status,
-          price: proj.price || '',
-          featured: Boolean(proj.featured),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((json as { error?: string }).error || `Request failed (${res.status})`);
       }
+      return json;
+    },
+    [adminToken]
+  );
 
-      for (const banner of DEFAULT_BANNERS) {
-        batch.set(doc(db, 'banners', banner.id), {
-          badgeText: banner.badgeText,
-          title: banner.title,
-          highlightWord: banner.highlightWord,
-          description: banner.description,
-          buttonText: banner.buttonText,
-          buttonLink: banner.buttonLink,
-          imageUrl: banner.imageUrl,
-          order: banner.order,
-          active: banner.active,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
+  // Load all data from Supabase (or Worker Admin proxy for private tables)
+  const loadSupabaseAll = useCallback(
+    async (client: SupabaseClient) => {
+      setLoadingData(true);
+      setSupabaseError('');
+      try {
+        const activeClient = isAdmin && supabaseAdminClient ? supabaseAdminClient : client;
 
-      for (const member of DEFAULT_TEAM) {
-        batch.set(doc(db, 'team', member.id), {
-          name: member.name,
-          role: member.role,
-          bio: member.bio,
-          avatarUrl: member.avatarUrl,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
+        const [projRes, banRes, setRes, teamRes] = await Promise.all([
+          activeClient.from('projects').select('*').order('created_at', { ascending: false }),
+          activeClient.from('banners').select('*').order('sort_order', { ascending: true }),
+          activeClient.from('website_settings').select('*').eq('id', 'site').maybeSingle(),
+          activeClient.from('team_members').select('*').order('created_at', { ascending: true }),
+        ]);
 
-      await batch.commit();
-    } catch (err) {
-      console.warn('Firestore initial seed skipped:', err);
-    }
-  }, [isAdmin, backendMode]);
-
-  useEffect(() => {
-    if (isAdmin && backendMode === 'firebase') {
-      seedFirestoreIfEmpty();
-    }
-  }, [isAdmin, backendMode, seedFirestoreIfEmpty]);
-
-  // Firebase Real-Time Subscriptions
-  useEffect(() => {
-    if (backendMode !== 'firebase') return;
-    setLoadingData(true);
-
-    // 1. Projects (Admin sees all, public queries Active only to comply with security rules)
-    const projectsQuery = isAdmin
-      ? collection(db, 'projects')
-      : query(collection(db, 'projects'), where('status', '==', 'Active'));
-
-    const unsubProjects = onSnapshot(
-      projectsQuery,
-      (snap) => {
-        if (!snap.empty) {
-          const list: Project[] = snap.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              name: String(data.name || ''),
-              description: String(data.description || ''),
-              category: (data.category as Project['category']) || 'New Design',
-              imageUrl: String(data.imageUrl || ''),
-              demoUrl: String(data.demoUrl || ''),
-              whatsappUrl: String(data.whatsappUrl || ''),
-              status: (data.status as Project['status']) || 'Active',
-              price: data.price ? String(data.price) : '',
-              featured: Boolean(data.featured),
-              createdAt: toIso(data.createdAt),
-              updatedAt: toIso(data.updatedAt),
-            };
-          });
-          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setProjects(list);
-        } else if (isAdmin) {
-          setProjects([]);
+        const firstErr = projRes.error || banRes.error || setRes.error || teamRes.error;
+        if (firstErr) {
+          setSupabaseError(firstErr.message);
         }
-        setLoadingData(false);
-      },
-      (err) => {
-        setLoadingData(false);
-        handleFirestoreError(err, OperationType.LIST, 'projects');
-      }
-    );
 
-    // 2. Banners
-    const unsubBanners = onSnapshot(
-      collection(db, 'banners'),
-      (snap) => {
-        if (!snap.empty) {
-          const list: Banner[] = snap.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              badgeText: String(data.badgeText || ''),
-              title: String(data.title || ''),
-              highlightWord: String(data.highlightWord || ''),
-              description: String(data.description || ''),
-              buttonText: String(data.buttonText || 'View Portfolio'),
-              buttonLink: String(data.buttonLink || '#projects'),
-              imageUrl: String(data.imageUrl || ''),
-              order: Number(data.order ?? 1),
-              active: data.active !== false,
-              createdAt: toIso(data.createdAt),
-              updatedAt: toIso(data.updatedAt),
-            };
-          });
-          list.sort((a, b) => a.order - b.order);
-          setBanners(list);
-        } else if (isAdmin) {
-          setBanners([]);
+        if (projRes.data && projRes.data.length > 0) {
+          setProjects(
+            projRes.data.map((r) => ({
+              id: r.id,
+              name: r.name,
+              description: r.description,
+              category: r.category,
+              imageUrl: r.image_url,
+              demoUrl: r.demo_url || '',
+              whatsappUrl: r.whatsapp_url || '',
+              status: r.status,
+              price: r.price || '',
+              featured: Boolean(r.featured),
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+          );
+        } else if (projRes.data && projRes.data.length === 0 && !autoSeededRef.current && isAdmin) {
+          // Auto-seed empty Supabase tables automatically when admin is logged in
+          autoSeededRef.current = true;
+          setTimeout(() => {
+            seedSupabaseData().catch(() => {});
+          }, 50);
         }
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'banners')
-    );
 
-    // 3. Website Settings
-    const unsubSettings = onSnapshot(
-      doc(db, 'settings', 'site'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
+        if (banRes.data && banRes.data.length > 0) {
+          setBanners(
+            banRes.data.map((r) => ({
+              id: r.id,
+              badgeText: r.badge_text || '',
+              title: r.title,
+              highlightWord: r.highlight_word || '',
+              description: r.description || '',
+              buttonText: r.button_text || 'View Portfolio',
+              buttonLink: r.button_link || '#projects',
+              imageUrl: r.image_url,
+              order: r.sort_order ?? 1,
+              active: r.active !== false,
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+          );
+        }
+
+        if (setRes.data) {
+          const s = setRes.data;
           setSettings({
-            siteName: String(data.siteName || DEFAULT_SETTINGS.siteName),
-            tagline: String(data.tagline || DEFAULT_SETTINGS.tagline),
-            description: String(data.description || DEFAULT_SETTINGS.description),
-            theme: (data.theme as WebsiteSettings['theme']) || 'Dark',
-            logoUrl: String(data.logoUrl || ''),
-            faviconUrl: String(data.faviconUrl || ''),
-            whatsappNumber: String(data.whatsappNumber || DEFAULT_SETTINGS.whatsappNumber),
-            aboutTitle: String(data.aboutTitle || DEFAULT_SETTINGS.aboutTitle),
-            aboutDescription: String(data.aboutDescription || DEFAULT_SETTINGS.aboutDescription),
-            footerText: String(data.footerText || DEFAULT_SETTINGS.footerText),
-            socialLinks: (data.socialLinks as WebsiteSettings['socialLinks']) || {},
-            updatedAt: toIso(data.updatedAt),
+            siteName: s.site_name || DEFAULT_SETTINGS.siteName,
+            tagline: s.tagline || DEFAULT_SETTINGS.tagline,
+            description: s.description || DEFAULT_SETTINGS.description,
+            theme: s.theme || 'Dark',
+            logoUrl: s.logo_url || '',
+            faviconUrl: s.favicon_url || '',
+            whatsappNumber: s.whatsapp_number || DEFAULT_SETTINGS.whatsappNumber,
+            aboutTitle: s.about_title || DEFAULT_SETTINGS.aboutTitle,
+            aboutDescription: s.about_description || DEFAULT_SETTINGS.aboutDescription,
+            footerText: s.footer_text || DEFAULT_SETTINGS.footerText,
+            socialLinks: s.social_links || {},
+            updatedAt: s.updated_at || new Date().toISOString(),
           });
         }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'settings/site')
-    );
 
-    // 4. Team Members
-    const unsubTeam = onSnapshot(
-      collection(db, 'team'),
-      (snap) => {
-        if (!snap.empty) {
-          const list: TeamMember[] = snap.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              name: String(data.name || ''),
-              role: String(data.role || ''),
-              bio: String(data.bio || ''),
-              avatarUrl: String(data.avatarUrl || ''),
-              createdAt: toIso(data.createdAt),
-              updatedAt: toIso(data.updatedAt),
-            };
-          });
-          setTeam(list);
-        } else if (isAdmin) {
-          setTeam([]);
+        if (teamRes.data && teamRes.data.length > 0) {
+          setTeam(
+            teamRes.data.map((r) => ({
+              id: r.id,
+              name: r.name,
+              role: r.role,
+              bio: r.bio || '',
+              avatarUrl: r.avatar_url || '',
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+          );
         }
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'team')
-    );
 
-    return () => {
-      unsubProjects();
-      unsubBanners();
-      unsubSettings();
-      unsubTeam();
-    };
-  }, [backendMode, isAdmin]);
+        // Load admin analytics & inbox tables if admin logged in
+        if (isAdmin) {
+          if (hasWorkerRole && adminToken) {
+            try {
+              const adminData = (await workerAdminRequest('/api/admin/data')) as {
+                contacts?: Record<string, unknown>[];
+                visitors?: Record<string, unknown>[];
+                contactClicks?: Record<string, unknown>[];
+                orders?: Record<string, unknown>[];
+              };
+              if (adminData.contacts) {
+                setContacts(
+                  adminData.contacts.map((r) => ({
+                    id: String(r.id),
+                    name: String(r.name),
+                    email: String(r.email || ''),
+                    phone: String(r.phone || ''),
+                    subject: String(r.subject || ''),
+                    message: String(r.message || ''),
+                    status: (r.status as 'Unread' | 'Read') || 'Unread',
+                    createdAt: String(r.created_at),
+                  }))
+                );
+              }
+              if (adminData.visitors) {
+                setVisitors(
+                  adminData.visitors.map((r) => ({
+                    id: String(r.id),
+                    visitorHash: String(r.visitor_hash),
+                    dateKey: String(r.date_key),
+                    isUnique: Boolean(r.is_unique),
+                    page: String(r.page || '/'),
+                    device: (r.device as VisitorEvent['device']) || 'Desktop',
+                    createdAt: String(r.created_at),
+                  }))
+                );
+              }
+              if (adminData.contactClicks) {
+                setContactClicks(
+                  adminData.contactClicks.map((r) => ({
+                    id: String(r.id),
+                    source: String(r.source),
+                    projectId: String(r.project_id || ''),
+                    projectName: String(r.project_name || ''),
+                    dateKey: String(r.date_key),
+                    createdAt: String(r.created_at),
+                  }))
+                );
+              }
+              if (adminData.orders) {
+                setOrders(
+                  adminData.orders.map((r) => ({
+                    id: String(r.id),
+                    clientName: String(r.client_name),
+                    clientContact: String(r.client_contact),
+                    projectId: String(r.project_id || ''),
+                    projectName: String(r.project_name),
+                    category: String(r.category || ''),
+                    notes: String(r.notes || ''),
+                    status: (r.status as OrderStatus) || 'Pending',
+                    createdAt: String(r.created_at),
+                    updatedAt: String(r.updated_at),
+                  }))
+                );
+              }
+              return;
+            } catch {
+              // Fall through to direct Supabase client
+            }
+          }
 
-  // Admin-only Firebase Real-Time Subscriptions (Contacts, Visitors, Contact Clicks, Orders)
-  useEffect(() => {
-    if (backendMode !== 'firebase' || !authReady || !isAdmin) {
-      if (backendMode === 'firebase') {
-        setContacts([]);
-        setVisitors([]);
-        setContactClicks([]);
-        setOrders([]);
+          const [contRes, visRes, clkRes, ordRes] = await Promise.all([
+            activeClient.from('contacts').select('*').order('created_at', { ascending: false }),
+            activeClient.from('visitors').select('*').order('created_at', { ascending: false }),
+            activeClient
+              .from('contact_clicks')
+              .select('*')
+              .order('created_at', { ascending: false }),
+            activeClient.from('orders').select('*').order('created_at', { ascending: false }),
+          ]);
+
+          if (contRes.data) {
+            setContacts(
+              contRes.data.map((r) => ({
+                id: r.id,
+                name: r.name,
+                email: r.email || '',
+                phone: r.phone || '',
+                subject: r.subject || '',
+                message: r.message,
+                status: r.status,
+                createdAt: r.created_at,
+              }))
+            );
+          }
+          if (visRes.data) {
+            setVisitors(
+              visRes.data.map((r) => ({
+                id: r.id,
+                visitorHash: r.visitor_hash,
+                dateKey: r.date_key,
+                isUnique: Boolean(r.is_unique),
+                page: r.page || '/',
+                device: r.device || 'Desktop',
+                createdAt: r.created_at,
+              }))
+            );
+          }
+          if (clkRes.data) {
+            setContactClicks(
+              clkRes.data.map((r) => ({
+                id: r.id,
+                source: r.source,
+                projectId: r.project_id || '',
+                projectName: r.project_name || '',
+                dateKey: r.date_key,
+                createdAt: r.created_at,
+              }))
+            );
+          }
+          if (ordRes.data) {
+            setOrders(
+              ordRes.data.map((r) => ({
+                id: r.id,
+                clientName: r.client_name,
+                clientContact: r.client_contact,
+                projectId: r.project_id || '',
+                projectName: r.project_name,
+                category: r.category || '',
+                notes: r.notes || '',
+                status: r.status,
+                createdAt: r.created_at,
+                updatedAt: r.updated_at,
+              }))
+            );
+          }
+        }
+      } finally {
+        setLoadingData(false);
       }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isAdmin, supabaseAdminClient, hasWorkerRole, adminToken, workerAdminRequest]
+  );
+
+  // Supabase Realtime Subscription
+  useEffect(() => {
+    if (!supabaseAnonClient) {
+      setLoadingData(false);
       return;
     }
+    loadSupabaseAll(supabaseAnonClient);
 
-    const unsubContacts = onSnapshot(
-      collection(db, 'contacts'),
-      (snap) => {
-        const list: ContactMessage[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: String(data.name || ''),
-            email: String(data.email || ''),
-            phone: String(data.phone || ''),
-            subject: String(data.subject || ''),
-            message: String(data.message || ''),
-            status: (data.status as 'Unread' | 'Read') || 'Unread',
-            createdAt: toIso(data.createdAt),
-          };
-        });
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setContacts(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'contacts')
-    );
-
-    const unsubVisitors = onSnapshot(
-      collection(db, 'visitors'),
-      (snap) => {
-        const list: VisitorEvent[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            visitorHash: String(data.visitorHash || ''),
-            dateKey: String(data.dateKey || ''),
-            isUnique: Boolean(data.isUnique),
-            page: String(data.page || '/'),
-            device: (data.device as VisitorEvent['device']) || 'Desktop',
-            createdAt: toIso(data.createdAt),
-          };
-        });
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setVisitors(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'visitors')
-    );
-
-    const unsubClicks = onSnapshot(
-      collection(db, 'contact_clicks'),
-      (snap) => {
-        const list: ContactClick[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            source: String(data.source || 'WhatsApp'),
-            projectId: data.projectId ? String(data.projectId) : '',
-            projectName: data.projectName ? String(data.projectName) : '',
-            dateKey: String(data.dateKey || ''),
-            createdAt: toIso(data.createdAt),
-          };
-        });
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setContactClicks(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'contact_clicks')
-    );
-
-    const unsubOrders = onSnapshot(
-      collection(db, 'orders'),
-      (snap) => {
-        const list: OrderRequest[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            clientName: String(data.clientName || ''),
-            clientContact: String(data.clientContact || ''),
-            projectId: data.projectId ? String(data.projectId) : '',
-            projectName: String(data.projectName || ''),
-            category: data.category ? String(data.category) : '',
-            notes: data.notes ? String(data.notes) : '',
-            status: (data.status as OrderStatus) || 'Pending',
-            createdAt: toIso(data.createdAt),
-            updatedAt: toIso(data.updatedAt),
-          };
-        });
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setOrders(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'orders')
-    );
-
-    return () => {
-      unsubContacts();
-      unsubVisitors();
-      unsubClicks();
-      unsubOrders();
-    };
-  }, [backendMode, authReady, isAdmin]);
-
-  // Supabase Loader & Realtime Subscription
-  const loadSupabaseAll = useCallback(async (client: SupabaseClient) => {
-    setLoadingData(true);
-    try {
-      const [projRes, banRes, setRes, teamRes, contRes, visRes, clkRes, ordRes] = await Promise.all([
-        client.from('projects').select('*').order('created_at', { ascending: false }),
-        client.from('banners').select('*').order('sort_order', { ascending: true }),
-        client.from('website_settings').select('*').eq('id', 'site').maybeSingle(),
-        client.from('team_members').select('*').order('created_at', { ascending: true }),
-        client.from('contacts').select('*').order('created_at', { ascending: false }),
-        client.from('visitors').select('*').order('created_at', { ascending: false }),
-        client.from('contact_clicks').select('*').order('created_at', { ascending: false }),
-        client.from('orders').select('*').order('created_at', { ascending: false }),
-      ]);
-
-      if (projRes.data && projRes.data.length > 0) {
-        setProjects(
-          projRes.data.map((r) => ({
-            id: r.id,
-            name: r.name,
-            description: r.description,
-            category: r.category,
-            imageUrl: r.image_url,
-            demoUrl: r.demo_url || '',
-            whatsappUrl: r.whatsapp_url || '',
-            status: r.status,
-            price: r.price || '',
-            featured: Boolean(r.featured),
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-        );
-      }
-      if (banRes.data && banRes.data.length > 0) {
-        setBanners(
-          banRes.data.map((r) => ({
-            id: r.id,
-            badgeText: r.badge_text || '',
-            title: r.title,
-            highlightWord: r.highlight_word || '',
-            description: r.description || '',
-            buttonText: r.button_text || 'View Portfolio',
-            buttonLink: r.button_link || '#projects',
-            imageUrl: r.image_url,
-            order: r.sort_order ?? 1,
-            active: r.active !== false,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-        );
-      }
-      if (setRes.data) {
-        const s = setRes.data;
-        setSettings({
-          siteName: s.site_name || DEFAULT_SETTINGS.siteName,
-          tagline: s.tagline || DEFAULT_SETTINGS.tagline,
-          description: s.description || DEFAULT_SETTINGS.description,
-          theme: s.theme || 'Dark',
-          logoUrl: s.logo_url || '',
-          faviconUrl: s.favicon_url || '',
-          whatsappNumber: s.whatsapp_number || DEFAULT_SETTINGS.whatsappNumber,
-          aboutTitle: s.about_title || DEFAULT_SETTINGS.aboutTitle,
-          aboutDescription: s.about_description || DEFAULT_SETTINGS.aboutDescription,
-          footerText: s.footer_text || DEFAULT_SETTINGS.footerText,
-          socialLinks: s.social_links || {},
-          updatedAt: s.updated_at || new Date().toISOString(),
-        });
-      }
-      if (teamRes.data && teamRes.data.length > 0) {
-        setTeam(
-          teamRes.data.map((r) => ({
-            id: r.id,
-            name: r.name,
-            role: r.role,
-            bio: r.bio || '',
-            avatarUrl: r.avatar_url || '',
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-        );
-      }
-      if (contRes.data) {
-        setContacts(
-          contRes.data.map((r) => ({
-            id: r.id,
-            name: r.name,
-            email: r.email || '',
-            phone: r.phone || '',
-            subject: r.subject || '',
-            message: r.message,
-            status: r.status,
-            createdAt: r.created_at,
-          }))
-        );
-      }
-      if (visRes.data) {
-        setVisitors(
-          visRes.data.map((r) => ({
-            id: r.id,
-            visitorHash: r.visitor_hash,
-            dateKey: r.date_key,
-            isUnique: Boolean(r.is_unique),
-            page: r.page || '/',
-            device: r.device || 'Desktop',
-            createdAt: r.created_at,
-          }))
-        );
-      }
-      if (clkRes.data) {
-        setContactClicks(
-          clkRes.data.map((r) => ({
-            id: r.id,
-            source: r.source,
-            projectId: r.project_id || '',
-            projectName: r.project_name || '',
-            dateKey: r.date_key,
-            createdAt: r.created_at,
-          }))
-        );
-      }
-      if (ordRes.data) {
-        setOrders(
-          ordRes.data.map((r) => ({
-            id: r.id,
-            clientName: r.client_name,
-            clientContact: r.client_contact,
-            projectId: r.project_id || '',
-            projectName: r.project_name,
-            category: r.category || '',
-            notes: r.notes || '',
-            status: r.status,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-        );
-      }
-    } finally {
-      setLoadingData(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!supabaseClient) return;
-    loadSupabaseAll(supabaseClient);
-
-    const channel = supabaseClient
+    const channel = supabaseAnonClient
       .channel('mjlab-realtime-sync')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        loadSupabaseAll(supabaseClient);
+        loadSupabaseAll(supabaseAnonClient);
       })
       .subscribe();
 
     return () => {
-      supabaseClient.removeChannel(channel);
+      supabaseAnonClient.removeChannel(channel);
     };
-  }, [supabaseClient, loadSupabaseAll]);
+  }, [supabaseAnonClient, loadSupabaseAll]);
 
-  // Auth Actions (Password-Only)
-  const adminLoginPassword = useCallback(
-    async (password: string, adminEmail?: string) => {
-      if (backendMode === 'supabase') {
-        const storedPass = (() => {
-          try {
-            return localStorage.getItem('mjlab_admin_passcode') || 'mjlab2026';
-          } catch {
-            return 'mjlab2026';
-          }
-        })();
-        if (password !== storedPass) {
-          throw new Error('Incorrect admin password.');
-        }
-        try {
-          sessionStorage.setItem('mjlab_sb_admin_auth', '1');
-        } catch {
-          // ignore
-        }
-        setSupabaseAdminAuth(true);
-        return;
-      }
-
-      const targetEmail = (adminEmail || '').trim() || BOOTSTRAPPED_ADMIN_EMAIL;
-      await signInWithEmailAndPassword(auth, targetEmail, password);
-    },
-    [backendMode]
-  );
-
-  const sendAdminVerification = useCallback(async () => {
-    if (!auth.currentUser) throw new Error('No signed-in user.');
-    await sendEmailVerification(auth.currentUser);
-  }, []);
-
-  const adminLogout = useCallback(async () => {
-    try {
-      sessionStorage.removeItem('mjlab_sb_admin_auth');
-    } catch {
-      // ignore
-    }
-    setSupabaseAdminAuth(false);
-    if (auth.currentUser) {
-      await signOut(auth);
-    }
-  }, []);
-
-  const adminChangePassword = useCallback(
-    async (currentPassword: string, newPassword: string) => {
-      if (backendMode === 'supabase') {
-        const storedPass = (() => {
-          try {
-            return localStorage.getItem('mjlab_admin_passcode') || 'mjlab2026';
-          } catch {
-            return 'mjlab2026';
-          }
-        })();
-        if (currentPassword !== storedPass) {
-          throw new Error('Current password is incorrect.');
-        }
-        localStorage.setItem('mjlab_admin_passcode', newPassword);
-        return;
-      }
-
-      if (!auth.currentUser || !auth.currentUser.email) {
-        throw new Error('No authenticated admin session.');
-      }
-      const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, cred);
-      await updatePassword(auth.currentUser, newPassword);
-    },
-    [backendMode]
-  );
-
-  // Supabase connection controls
-  const connectSupabase = useCallback(async (url: string, anonKey: string) => {
-    const cfg: SupabaseConnectionConfig = { url: url.trim(), anonKey: anonKey.trim(), enabled: true };
-    const testClient = createSupabaseClient(cfg);
-    if (!testClient) throw new Error('Invalid Supabase URL or Anon Key.');
-    const { error } = await testClient.from('website_settings').select('id').limit(1);
-    if (error && !error.message.includes('0 rows')) {
-      throw new Error(`Supabase connection check failed: ${error.message}`);
-    }
-    saveSupabaseConfig(cfg);
-    setSupabaseConfig(cfg);
-  }, []);
-
-  const disconnectSupabase = useCallback(() => {
-    clearSupabaseConfig();
-    setSupabaseConfig({ url: '', anonKey: '', enabled: false });
-  }, []);
-
+  // Seed Supabase with default MJ LAB data
   const seedSupabaseData = useCallback(async () => {
-    if (!supabaseClient) throw new Error('Supabase is not connected.');
+    const client = supabaseAdminClient || supabaseAnonClient;
+    if (!client && !hasWorkerRole) throw new Error('Supabase is not connected yet.');
     setSyncingSeed(true);
     try {
-      await supabaseClient.from('website_settings').upsert({
+      const settingsRow = {
         id: 'site',
         site_name: settings.siteName,
         tagline: settings.tagline,
@@ -835,58 +643,235 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         footer_text: settings.footerText,
         social_links: settings.socialLinks,
         updated_at: new Date().toISOString(),
-      });
+      };
+      const projectRows = projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+        image_url: p.imageUrl,
+        demo_url: p.demoUrl,
+        whatsapp_url: p.whatsappUrl,
+        status: p.status,
+        price: p.price || '',
+        featured: Boolean(p.featured),
+        created_at: p.createdAt,
+        updated_at: p.updatedAt,
+      }));
+      const bannerRows = banners.map((b) => ({
+        id: b.id,
+        badge_text: b.badgeText,
+        title: b.title,
+        highlight_word: b.highlightWord,
+        description: b.description,
+        button_text: b.buttonText,
+        button_link: b.buttonLink,
+        image_url: b.imageUrl,
+        sort_order: b.order,
+        active: b.active,
+        created_at: b.createdAt,
+        updated_at: b.updatedAt,
+      }));
+      const teamRows = team.map((t) => ({
+        id: t.id,
+        name: t.name,
+        role: t.role,
+        bio: t.bio,
+        avatar_url: t.avatarUrl,
+        created_at: t.createdAt,
+        updated_at: t.updatedAt,
+      }));
 
-      await supabaseClient.from('projects').upsert(
-        projects.map((p) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          category: p.category,
-          image_url: p.imageUrl,
-          demo_url: p.demoUrl,
-          whatsapp_url: p.whatsappUrl,
-          status: p.status,
-          price: p.price || '',
-          featured: Boolean(p.featured),
-          created_at: p.createdAt,
-          updated_at: p.updatedAt,
-        }))
-      );
-
-      await supabaseClient.from('banners').upsert(
-        banners.map((b) => ({
-          id: b.id,
-          badge_text: b.badgeText,
-          title: b.title,
-          highlight_word: b.highlightWord,
-          description: b.description,
-          button_text: b.buttonText,
-          button_link: b.buttonLink,
-          image_url: b.imageUrl,
-          sort_order: b.order,
-          active: b.active,
-          created_at: b.createdAt,
-          updated_at: b.updatedAt,
-        }))
-      );
-
-      await supabaseClient.from('team_members').upsert(
-        team.map((t) => ({
-          id: t.id,
-          name: t.name,
-          role: t.role,
-          bio: t.bio,
-          avatar_url: t.avatarUrl,
-          created_at: t.createdAt,
-          updated_at: t.updatedAt,
-        }))
-      );
-      await loadSupabaseAll(supabaseClient);
+      if (hasWorkerRole && adminToken) {
+        await workerAdminRequest('/api/admin/seed', {
+          method: 'POST',
+          body: JSON.stringify({
+            settings: settingsRow,
+            projects: projectRows,
+            banners: bannerRows,
+            team: teamRows,
+          }),
+        });
+      } else if (client) {
+        const r1 = await client.from('website_settings').upsert(settingsRow);
+        if (r1.error) throw new Error(r1.error.message);
+        const r2 = await client.from('projects').upsert(projectRows);
+        if (r2.error) throw new Error(r2.error.message);
+        const r3 = await client.from('banners').upsert(bannerRows);
+        if (r3.error) throw new Error(r3.error.message);
+        const r4 = await client.from('team_members').upsert(teamRows);
+        if (r4.error) throw new Error(r4.error.message);
+      }
+      if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
+      }
     } finally {
       setSyncingSeed(false);
     }
-  }, [supabaseClient, settings, projects, banners, team, loadSupabaseAll]);
+  }, [
+    supabaseAdminClient,
+    supabaseAnonClient,
+    hasWorkerRole,
+    adminToken,
+    workerAdminRequest,
+    settings,
+    projects,
+    banners,
+    team,
+    loadSupabaseAll,
+  ]);
+
+  // Password-Only Admin Authentication
+  const adminLoginPassword = useCallback(
+    async (password: string) => {
+      const cleanPassword = password.trim();
+      if (hasWorkerAuth) {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: cleanPassword }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          token?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.token) {
+          throw new Error(data.error || 'Incorrect admin password.');
+        }
+        try {
+          sessionStorage.setItem(ADMIN_SESSION_KEY, data.token);
+        } catch {
+          // ignore
+        }
+        setAdminToken(data.token);
+        setIsAdmin(true);
+        return;
+      }
+
+      const storedPass = (() => {
+        try {
+          return (localStorage.getItem(ADMIN_PASSCODE_KEY) || DEFAULT_ADMIN_PASSWORD).trim();
+        } catch {
+          return DEFAULT_ADMIN_PASSWORD;
+        }
+      })();
+      if (cleanPassword !== storedPass) {
+        throw new Error('Incorrect admin password.');
+      }
+      try {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, 'local-admin-session');
+      } catch {
+        // ignore
+      }
+      setAdminToken('local-admin-session');
+      setIsAdmin(true);
+    },
+    [hasWorkerAuth]
+  );
+
+  const adminLogout = useCallback(async () => {
+    try {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    setAdminToken('');
+    setIsAdmin(false);
+  }, []);
+
+  const adminChangePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      if (hasWorkerAuth) {
+        throw new Error(
+          'Password is managed by Cloudflare Worker ADMIN_PASSWORD secret. Update ADMIN_PASSWORD in Cloudflare Worker Settings.'
+        );
+      }
+      const storedPass = (() => {
+        try {
+          return localStorage.getItem(ADMIN_PASSCODE_KEY) || DEFAULT_ADMIN_PASSWORD;
+        } catch {
+          return DEFAULT_ADMIN_PASSWORD;
+        }
+      })();
+      if (currentPassword !== storedPass) {
+        throw new Error('Current password is incorrect.');
+      }
+      localStorage.setItem(ADMIN_PASSCODE_KEY, newPassword);
+    },
+    [hasWorkerAuth]
+  );
+
+  // Supabase Key Connect / Disconnect
+  const connectSupabase = useCallback(async (url: string, anonKey: string, roleKey = '') => {
+    const cfg: SupabaseConnectionConfig = {
+      url: url.trim(),
+      anonKey: anonKey.trim(),
+      roleKey: roleKey.trim(),
+      enabled: true,
+    };
+    const testClient = createSupabaseClient(cfg, Boolean(roleKey.trim()));
+    if (!testClient) throw new Error('Invalid Supabase URL or Key.');
+    const { error } = await testClient.from('website_settings').select('id').limit(1);
+    if (error && !error.message.includes('0 rows')) {
+      if (error.message.includes('does not exist') || error.message.includes('schema cache')) {
+        saveSupabaseConfig(cfg);
+        setSupabaseConfig(cfg);
+        setSupabaseError(error.message);
+        throw new Error(
+          'Keys saved! Now run the SQL Setup script once in your Supabase SQL Editor to create the tables.'
+        );
+      }
+      throw new Error(`Supabase connection check failed: ${error.message}`);
+    }
+    saveSupabaseConfig(cfg);
+    setSupabaseConfig(cfg);
+    setSupabaseError('');
+  }, []);
+
+  const disconnectSupabase = useCallback(() => {
+    clearSupabaseConfig();
+    setSupabaseConfig({ url: '', anonKey: '', roleKey: '', enabled: false });
+    setSupabaseError('');
+  }, []);
+
+  // Mutation Helper (Worker Service Role -> Direct Admin/Anon Supabase -> Local Store)
+  const mutateTable = useCallback(
+    async (
+      table: string,
+      action: 'insert' | 'update' | 'upsert' | 'delete',
+      payload?: Record<string, unknown>,
+      id?: string
+    ) => {
+      if (hasWorkerRole && adminToken) {
+        await workerAdminRequest('/api/admin/mutate', {
+          method: 'POST',
+          body: JSON.stringify({ table, action, payload, id }),
+        });
+        return true;
+      }
+
+      const client = supabaseAdminClient || supabaseAnonClient;
+      if (client) {
+        if (action === 'insert' && payload) {
+          const { error } = await client.from(table).insert(payload);
+          if (error) throw new Error(error.message);
+        } else if (action === 'upsert' && payload) {
+          const { error } = await client.from(table).upsert(payload);
+          if (error) throw new Error(error.message);
+        } else if (action === 'update' && payload && id) {
+          const { error } = await client.from(table).update(payload).eq('id', id);
+          if (error) throw new Error(error.message);
+        } else if (action === 'delete' && id) {
+          const { error } = await client.from(table).delete().eq('id', id);
+          if (error) throw new Error(error.message);
+        }
+        return true;
+      }
+
+      return false;
+    },
+    [hasWorkerRole, adminToken, workerAdminRequest, supabaseAdminClient, supabaseAnonClient]
+  );
 
   // Public interactions
   const recordVisit = useCallback(
@@ -899,7 +884,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         sessionStorage.setItem('mjlab_session_visited', '1');
       } catch {
-        // ignore sessionStorage block
+        // ignore
       }
       visitRecordedRef.current = true;
 
@@ -920,73 +905,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const id = makeSafeId('vis');
       const device = detectDevice();
+      const now = new Date().toISOString();
 
-      if (supabaseClient) {
-        await supabaseClient.from('visitors').insert({
+      if (supabaseAnonClient) {
+        await supabaseAnonClient.from('visitors').insert({
           id,
           visitor_hash: hash,
           date_key: dateKey,
           is_unique: isUniqueToday,
           page,
           device,
-          created_at: new Date().toISOString(),
+          created_at: now,
         });
         return;
       }
 
-      try {
-        await setDoc(doc(db, 'visitors', id), {
-          visitorHash: hash,
-          dateKey,
-          isUnique: isUniqueToday,
-          page: page.slice(0, 120),
-          device,
-          createdAt: serverTimestamp(),
-        });
-      } catch (err) {
-        console.warn('Visit tracking skipped:', err);
-      }
+      setVisitors((prev) => {
+        const next = [{ id, visitorHash: hash, dateKey, isUnique: isUniqueToday, page, device, createdAt: now }, ...prev];
+        persistLocal({ visitors: next });
+        return next;
+      });
     },
-    [supabaseClient]
+    [supabaseAnonClient, persistLocal]
   );
 
   const recordContactClick = useCallback(
     async (source: string, project?: Project) => {
       const id = makeSafeId('clk');
       const dateKey = getTodayDateKey();
+      const now = new Date().toISOString();
 
-      if (supabaseClient) {
-        await supabaseClient.from('contact_clicks').insert({
+      if (supabaseAnonClient) {
+        await supabaseAnonClient.from('contact_clicks').insert({
           id,
           source,
           project_id: project?.id || '',
           project_name: project?.name || '',
           date_key: dateKey,
-          created_at: new Date().toISOString(),
+          created_at: now,
         });
         return;
       }
 
-      try {
-        await setDoc(doc(db, 'contact_clicks', id), {
-          source: source.slice(0, 80),
-          projectId: project?.id || '',
-          projectName: project?.name ? project.name.slice(0, 120) : '',
-          dateKey,
-          createdAt: serverTimestamp(),
-        });
-      } catch (err) {
-        console.warn('Contact click tracking error:', err);
-      }
+      setContactClicks((prev) => {
+        const next = [
+          {
+            id,
+            source,
+            projectId: project?.id || '',
+            projectName: project?.name || '',
+            dateKey,
+            createdAt: now,
+          },
+          ...prev,
+        ];
+        persistLocal({ contactClicks: next });
+        return next;
+      });
     },
-    [supabaseClient]
+    [supabaseAnonClient, persistLocal]
   );
 
   const submitContactMessage = useCallback(
     async (payload: { name: string; email: string; phone: string; subject: string; message: string }) => {
       const id = makeSafeId('msg');
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('contacts').insert({
+      const now = new Date().toISOString();
+
+      if (supabaseAnonClient) {
+        const { error } = await supabaseAnonClient.from('contacts').insert({
           id,
           name: payload.name.trim(),
           email: payload.email.trim(),
@@ -994,27 +980,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           subject: payload.subject.trim(),
           message: payload.message.trim(),
           status: 'Unread',
-          created_at: new Date().toISOString(),
+          created_at: now,
         });
         if (error) throw new Error(error.message);
         return;
       }
 
-      try {
-        await setDoc(doc(db, 'contacts', id), {
-          name: payload.name.trim().slice(0, 80),
-          email: payload.email.trim().slice(0, 120),
-          phone: payload.phone.trim().slice(0, 32),
-          subject: payload.subject.trim().slice(0, 120),
-          message: payload.message.trim().slice(0, 2000),
-          status: 'Unread',
-          createdAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `contacts/${id}`);
-      }
+      setContacts((prev) => {
+        const next: ContactMessage[] = [
+          {
+            id,
+            name: payload.name.trim(),
+            email: payload.email.trim(),
+            phone: payload.phone.trim(),
+            subject: payload.subject.trim(),
+            message: payload.message.trim(),
+            status: 'Unread',
+            createdAt: now,
+          },
+          ...prev,
+        ];
+        persistLocal({ contacts: next });
+        return next;
+      });
     },
-    [supabaseClient]
+    [supabaseAnonClient, persistLocal]
   );
 
   const submitOrderRequest = useCallback(
@@ -1027,9 +1017,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       notes?: string;
     }) => {
       const id = makeSafeId('ord');
-      if (supabaseClient) {
-        const now = new Date().toISOString();
-        const { error } = await supabaseClient.from('orders').insert({
+      const now = new Date().toISOString();
+
+      if (supabaseAnonClient) {
+        const { error } = await supabaseAnonClient.from('orders').insert({
           id,
           client_name: payload.clientName.trim(),
           client_contact: payload.clientContact.trim(),
@@ -1045,206 +1036,189 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      try {
-        await setDoc(doc(db, 'orders', id), {
-          clientName: payload.clientName.trim().slice(0, 80),
-          clientContact: payload.clientContact.trim().slice(0, 120),
-          projectId: (payload.projectId || '').slice(0, 128),
-          projectName: payload.projectName.trim().slice(0, 120),
-          category: (payload.category || '').slice(0, 60),
-          notes: (payload.notes || '').slice(0, 1000),
-          status: 'Pending',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `orders/${id}`);
-      }
+      setOrders((prev) => {
+        const next: OrderRequest[] = [
+          {
+            id,
+            clientName: payload.clientName.trim(),
+            clientContact: payload.clientContact.trim(),
+            projectId: payload.projectId || '',
+            projectName: payload.projectName.trim(),
+            category: payload.category || '',
+            notes: payload.notes || '',
+            status: 'Pending',
+            createdAt: now,
+            updatedAt: now,
+          },
+          ...prev,
+        ];
+        persistLocal({ orders: next });
+        return next;
+      });
     },
-    [supabaseClient]
+    [supabaseAnonClient, persistLocal]
   );
 
   // Admin CRUD: Projects
   const addProject = useCallback(
     async (payload: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
       const id = makeSafeId('proj');
-      if (supabaseClient) {
-        const now = new Date().toISOString();
-        const { error } = await supabaseClient.from('projects').insert({
-          id,
-          name: payload.name,
-          description: payload.description,
-          category: payload.category,
-          image_url: payload.imageUrl,
-          demo_url: payload.demoUrl || '',
-          whatsapp_url: payload.whatsappUrl || '',
-          status: payload.status,
-          price: payload.price || '',
-          featured: Boolean(payload.featured),
-          created_at: now,
-          updated_at: now,
+      const now = new Date().toISOString();
+      const handled = await mutateTable('projects', 'insert', {
+        id,
+        name: payload.name,
+        description: payload.description,
+        category: payload.category,
+        image_url: payload.imageUrl,
+        demo_url: payload.demoUrl || '',
+        whatsapp_url: payload.whatsappUrl || '',
+        status: payload.status,
+        price: payload.price || '',
+        featured: Boolean(payload.featured),
+        created_at: now,
+        updated_at: now,
+      });
+      if (!handled) {
+        setProjects((prev) => {
+          const next = [{ ...payload, id, createdAt: now, updatedAt: now }, ...prev];
+          persistLocal({ projects: next });
+          return next;
         });
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await setDoc(doc(db, 'projects', id), {
-          name: payload.name.slice(0, 120),
-          description: payload.description.slice(0, 1000),
-          category: payload.category,
-          imageUrl: payload.imageUrl,
-          demoUrl: (payload.demoUrl || '').slice(0, 500),
-          whatsappUrl: (payload.whatsappUrl || '').slice(0, 500),
-          status: payload.status,
-          price: (payload.price || '').slice(0, 40),
-          featured: Boolean(payload.featured),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `projects/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const updateProject = useCallback(
     async (id: string, payload: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>) => {
-      if (supabaseClient) {
-        const mapped: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (payload.name !== undefined) mapped.name = payload.name;
-        if (payload.description !== undefined) mapped.description = payload.description;
-        if (payload.category !== undefined) mapped.category = payload.category;
-        if (payload.imageUrl !== undefined) mapped.image_url = payload.imageUrl;
-        if (payload.demoUrl !== undefined) mapped.demo_url = payload.demoUrl;
-        if (payload.whatsappUrl !== undefined) mapped.whatsapp_url = payload.whatsappUrl;
-        if (payload.status !== undefined) mapped.status = payload.status;
-        if (payload.price !== undefined) mapped.price = payload.price;
-        if (payload.featured !== undefined) mapped.featured = payload.featured;
-        const { error } = await supabaseClient.from('projects').update(mapped).eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, 'projects', id), {
-          ...payload,
-          updatedAt: serverTimestamp(),
+      const now = new Date().toISOString();
+      const mapped: Record<string, unknown> = { updated_at: now };
+      if (payload.name !== undefined) mapped.name = payload.name;
+      if (payload.description !== undefined) mapped.description = payload.description;
+      if (payload.category !== undefined) mapped.category = payload.category;
+      if (payload.imageUrl !== undefined) mapped.image_url = payload.imageUrl;
+      if (payload.demoUrl !== undefined) mapped.demo_url = payload.demoUrl;
+      if (payload.whatsappUrl !== undefined) mapped.whatsapp_url = payload.whatsappUrl;
+      if (payload.status !== undefined) mapped.status = payload.status;
+      if (payload.price !== undefined) mapped.price = payload.price;
+      if (payload.featured !== undefined) mapped.featured = payload.featured;
+
+      const handled = await mutateTable('projects', 'update', mapped, id);
+      if (!handled) {
+        setProjects((prev) => {
+          const next = prev.map((p) => (p.id === id ? { ...p, ...payload, updatedAt: now } : p));
+          persistLocal({ projects: next });
+          return next;
         });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `projects/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const deleteProject = useCallback(
     async (id: string) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('projects').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await deleteDoc(doc(db, 'projects', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `projects/${id}`);
+      const handled = await mutateTable('projects', 'delete', undefined, id);
+      if (!handled) {
+        setProjects((prev) => {
+          const next = prev.filter((p) => p.id !== id);
+          persistLocal({ projects: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   // Admin CRUD: Banners
   const addBanner = useCallback(
     async (payload: Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>) => {
       const id = makeSafeId('ban');
-      if (supabaseClient) {
-        const now = new Date().toISOString();
-        const { error } = await supabaseClient.from('banners').insert({
-          id,
-          badge_text: payload.badgeText,
-          title: payload.title,
-          highlight_word: payload.highlightWord,
-          description: payload.description,
-          button_text: payload.buttonText,
-          button_link: payload.buttonLink,
-          image_url: payload.imageUrl,
-          sort_order: payload.order,
-          active: payload.active,
-          created_at: now,
-          updated_at: now,
+      const now = new Date().toISOString();
+      const handled = await mutateTable('banners', 'insert', {
+        id,
+        badge_text: payload.badgeText,
+        title: payload.title,
+        highlight_word: payload.highlightWord,
+        description: payload.description,
+        button_text: payload.buttonText,
+        button_link: payload.buttonLink,
+        image_url: payload.imageUrl,
+        sort_order: payload.order,
+        active: payload.active,
+        created_at: now,
+        updated_at: now,
+      });
+      if (!handled) {
+        setBanners((prev) => {
+          const next = [...prev, { ...payload, id, createdAt: now, updatedAt: now }].sort(
+            (a, b) => a.order - b.order
+          );
+          persistLocal({ banners: next });
+          return next;
         });
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await setDoc(doc(db, 'banners', id), {
-          badgeText: payload.badgeText.slice(0, 80),
-          title: payload.title.slice(0, 160),
-          highlightWord: payload.highlightWord.slice(0, 60),
-          description: payload.description.slice(0, 300),
-          buttonText: payload.buttonText.slice(0, 50),
-          buttonLink: payload.buttonLink.slice(0, 500),
-          imageUrl: payload.imageUrl,
-          order: Number(payload.order || 1),
-          active: Boolean(payload.active),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `banners/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const updateBanner = useCallback(
     async (id: string, payload: Partial<Omit<Banner, 'id' | 'createdAt' | 'updatedAt'>>) => {
-      if (supabaseClient) {
-        const mapped: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (payload.badgeText !== undefined) mapped.badge_text = payload.badgeText;
-        if (payload.title !== undefined) mapped.title = payload.title;
-        if (payload.highlightWord !== undefined) mapped.highlight_word = payload.highlightWord;
-        if (payload.description !== undefined) mapped.description = payload.description;
-        if (payload.buttonText !== undefined) mapped.button_text = payload.buttonText;
-        if (payload.buttonLink !== undefined) mapped.button_link = payload.buttonLink;
-        if (payload.imageUrl !== undefined) mapped.image_url = payload.imageUrl;
-        if (payload.order !== undefined) mapped.sort_order = payload.order;
-        if (payload.active !== undefined) mapped.active = payload.active;
-        const { error } = await supabaseClient.from('banners').update(mapped).eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, 'banners', id), {
-          ...payload,
-          updatedAt: serverTimestamp(),
+      const now = new Date().toISOString();
+      const mapped: Record<string, unknown> = { updated_at: now };
+      if (payload.badgeText !== undefined) mapped.badge_text = payload.badgeText;
+      if (payload.title !== undefined) mapped.title = payload.title;
+      if (payload.highlightWord !== undefined) mapped.highlight_word = payload.highlightWord;
+      if (payload.description !== undefined) mapped.description = payload.description;
+      if (payload.buttonText !== undefined) mapped.button_text = payload.buttonText;
+      if (payload.buttonLink !== undefined) mapped.button_link = payload.buttonLink;
+      if (payload.imageUrl !== undefined) mapped.image_url = payload.imageUrl;
+      if (payload.order !== undefined) mapped.sort_order = payload.order;
+      if (payload.active !== undefined) mapped.active = payload.active;
+
+      const handled = await mutateTable('banners', 'update', mapped, id);
+      if (!handled) {
+        setBanners((prev) => {
+          const next = prev
+            .map((b) => (b.id === id ? { ...b, ...payload, updatedAt: now } : b))
+            .sort((a, b) => a.order - b.order);
+          persistLocal({ banners: next });
+          return next;
         });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `banners/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const deleteBanner = useCallback(
     async (id: string) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('banners').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await deleteDoc(doc(db, 'banners', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `banners/${id}`);
+      const handled = await mutateTable('banners', 'delete', undefined, id);
+      if (!handled) {
+        setBanners((prev) => {
+          const next = prev.filter((b) => b.id !== id);
+          persistLocal({ banners: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   // Admin CRUD: Website Settings
   const saveSettings = useCallback(
     async (payload: Partial<WebsiteSettings>) => {
+      const now = new Date().toISOString();
       const merged: WebsiteSettings = {
         ...settings,
         ...payload,
@@ -1252,206 +1226,179 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...settings.socialLinks,
           ...(payload.socialLinks || {}),
         },
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       };
 
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('website_settings').upsert({
-          id: 'site',
-          site_name: merged.siteName,
-          tagline: merged.tagline,
-          description: merged.description,
-          theme: merged.theme,
-          logo_url: merged.logoUrl,
-          favicon_url: merged.faviconUrl,
-          whatsapp_number: merged.whatsappNumber,
-          about_title: merged.aboutTitle,
-          about_description: merged.aboutDescription,
-          footer_text: merged.footerText,
-          social_links: merged.socialLinks,
-          updated_at: merged.updatedAt,
-        });
-        if (error) throw new Error(error.message);
-        return;
-      }
+      const handled = await mutateTable('website_settings', 'upsert', {
+        id: 'site',
+        site_name: merged.siteName,
+        tagline: merged.tagline,
+        description: merged.description,
+        theme: merged.theme,
+        logo_url: merged.logoUrl,
+        favicon_url: merged.faviconUrl,
+        whatsapp_number: merged.whatsappNumber,
+        about_title: merged.aboutTitle,
+        about_description: merged.aboutDescription,
+        footer_text: merged.footerText,
+        social_links: merged.socialLinks,
+        updated_at: now,
+      });
 
-      try {
-        await setDoc(doc(db, 'settings', 'site'), {
-          siteName: merged.siteName.slice(0, 80),
-          tagline: merged.tagline.slice(0, 120),
-          description: merged.description.slice(0, 600),
-          theme: merged.theme,
-          logoUrl: merged.logoUrl || '',
-          faviconUrl: merged.faviconUrl || '',
-          whatsappNumber: merged.whatsappNumber.slice(0, 24),
-          aboutTitle: merged.aboutTitle.slice(0, 140),
-          aboutDescription: merged.aboutDescription.slice(0, 2000),
-          footerText: merged.footerText.slice(0, 240),
-          socialLinks: merged.socialLinks,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'settings/site');
+      if (!handled) {
+        setSettings(merged);
+        persistLocal({ settings: merged });
+      } else if (supabaseAnonClient) {
+        setSettings(merged);
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [settings, supabaseClient]
+    [settings, mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   // Admin CRUD: Team Members
   const addTeamMember = useCallback(
     async (payload: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>) => {
       const id = makeSafeId('team');
-      if (supabaseClient) {
-        const now = new Date().toISOString();
-        const { error } = await supabaseClient.from('team_members').insert({
-          id,
-          name: payload.name,
-          role: payload.role,
-          bio: payload.bio,
-          avatar_url: payload.avatarUrl,
-          created_at: now,
-          updated_at: now,
+      const now = new Date().toISOString();
+      const handled = await mutateTable('team_members', 'insert', {
+        id,
+        name: payload.name,
+        role: payload.role,
+        bio: payload.bio,
+        avatar_url: payload.avatarUrl,
+        created_at: now,
+        updated_at: now,
+      });
+      if (!handled) {
+        setTeam((prev) => {
+          const next = [...prev, { ...payload, id, createdAt: now, updatedAt: now }];
+          persistLocal({ team: next });
+          return next;
         });
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await setDoc(doc(db, 'team', id), {
-          name: payload.name.slice(0, 80),
-          role: payload.role.slice(0, 80),
-          bio: payload.bio.slice(0, 400),
-          avatarUrl: payload.avatarUrl || '',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `team/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const updateTeamMember = useCallback(
     async (id: string, payload: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>>) => {
-      if (supabaseClient) {
-        const mapped: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (payload.name !== undefined) mapped.name = payload.name;
-        if (payload.role !== undefined) mapped.role = payload.role;
-        if (payload.bio !== undefined) mapped.bio = payload.bio;
-        if (payload.avatarUrl !== undefined) mapped.avatar_url = payload.avatarUrl;
-        const { error } = await supabaseClient.from('team_members').update(mapped).eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, 'team', id), {
-          ...payload,
-          updatedAt: serverTimestamp(),
+      const now = new Date().toISOString();
+      const mapped: Record<string, unknown> = { updated_at: now };
+      if (payload.name !== undefined) mapped.name = payload.name;
+      if (payload.role !== undefined) mapped.role = payload.role;
+      if (payload.bio !== undefined) mapped.bio = payload.bio;
+      if (payload.avatarUrl !== undefined) mapped.avatar_url = payload.avatarUrl;
+
+      const handled = await mutateTable('team_members', 'update', mapped, id);
+      if (!handled) {
+        setTeam((prev) => {
+          const next = prev.map((m) => (m.id === id ? { ...m, ...payload, updatedAt: now } : m));
+          persistLocal({ team: next });
+          return next;
         });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `team/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const deleteTeamMember = useCallback(
     async (id: string) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('team_members').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await deleteDoc(doc(db, 'team', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `team/${id}`);
+      const handled = await mutateTable('team_members', 'delete', undefined, id);
+      if (!handled) {
+        setTeam((prev) => {
+          const next = prev.filter((m) => m.id !== id);
+          persistLocal({ team: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   // Admin CRUD: Contacts & Orders
   const markContactRead = useCallback(
     async (id: string, status: 'Read' | 'Unread') => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('contacts').update({ status }).eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, 'contacts', id), { status });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `contacts/${id}`);
+      const handled = await mutateTable('contacts', 'update', { status }, id);
+      if (!handled) {
+        setContacts((prev) => {
+          const next = prev.map((c) => (c.id === id ? { ...c, status } : c));
+          persistLocal({ contacts: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const deleteContact = useCallback(
     async (id: string) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('contacts').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await deleteDoc(doc(db, 'contacts', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `contacts/${id}`);
+      const handled = await mutateTable('contacts', 'delete', undefined, id);
+      if (!handled) {
+        setContacts((prev) => {
+          const next = prev.filter((c) => c.id !== id);
+          persistLocal({ contacts: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const updateOrderStatus = useCallback(
     async (id: string, status: OrderStatus) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient
-          .from('orders')
-          .update({ status, updated_at: new Date().toISOString() })
-          .eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, 'orders', id), {
-          status,
-          updatedAt: serverTimestamp(),
+      const now = new Date().toISOString();
+      const handled = await mutateTable('orders', 'update', { status, updated_at: now }, id);
+      if (!handled) {
+        setOrders((prev) => {
+          const next = prev.map((o) => (o.id === id ? { ...o, status, updatedAt: now } : o));
+          persistLocal({ orders: next });
+          return next;
         });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `orders/${id}`);
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const deleteOrder = useCallback(
     async (id: string) => {
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('orders').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        return;
-      }
-      try {
-        await deleteDoc(doc(db, 'orders', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `orders/${id}`);
+      const handled = await mutateTable('orders', 'delete', undefined, id);
+      if (!handled) {
+        setOrders((prev) => {
+          const next = prev.filter((o) => o.id !== id);
+          persistLocal({ orders: next });
+          return next;
+        });
+      } else if (supabaseAnonClient) {
+        await loadSupabaseAll(supabaseAnonClient);
       }
     },
-    [supabaseClient]
+    [mutateTable, persistLocal, supabaseAnonClient, loadSupabaseAll]
   );
 
   const value: DataContextValue = {
-    user,
     authReady,
     isAdmin,
+    adminDisplayName: 'MJ LAB Admin',
     adminLoginPassword,
-    sendAdminVerification,
     adminLogout,
     adminChangePassword,
-    backendMode,
+    supabaseConnected,
+    hasWorkerRole,
     supabaseConfig,
+    supabaseError,
     connectSupabase,
     disconnectSupabase,
     seedSupabaseData,

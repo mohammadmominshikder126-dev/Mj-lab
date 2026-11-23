@@ -8,21 +8,25 @@ export function getSavedSupabaseConfig(): SupabaseConnectionConfig {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SupabaseConnectionConfig>;
-      return {
-        url: parsed.url || '',
-        anonKey: parsed.anonKey || '',
-        enabled: Boolean(parsed.enabled && parsed.url && parsed.anonKey),
-      };
+      if (parsed.url && parsed.anonKey) {
+        return {
+          url: parsed.url,
+          anonKey: parsed.anonKey,
+          roleKey: parsed.roleKey || '',
+          enabled: Boolean(parsed.enabled),
+        };
+      }
     }
   } catch {
     // ignore storage errors
   }
-  const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || '';
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
+  const envRole = (import.meta.env.VITE_SUPABASE_ROLE_KEY as string | undefined) || '';
   if (envUrl && envKey) {
-    return { url: envUrl, anonKey: envKey, enabled: true };
+    return { url: envUrl, anonKey: envKey, roleKey: envRole, enabled: true };
   }
-  return { url: '', anonKey: '', enabled: false };
+  return { url: '', anonKey: '', roleKey: '', enabled: false };
 }
 
 export function saveSupabaseConfig(config: SupabaseConnectionConfig): void {
@@ -41,10 +45,14 @@ export function clearSupabaseConfig(): void {
   }
 }
 
-export function createSupabaseClient(config: SupabaseConnectionConfig): SupabaseClient | null {
-  if (!config.enabled || !config.url || !config.anonKey) return null;
+export function createSupabaseClient(
+  config: SupabaseConnectionConfig,
+  useRoleKey = false
+): SupabaseClient | null {
+  const key = useRoleKey && config.roleKey ? config.roleKey.trim() : config.anonKey.trim();
+  if (!config.enabled || !config.url || !key) return null;
   try {
-    return createClient(config.url.trim(), config.anonKey.trim(), {
+    return createClient(config.url.trim(), key, {
       realtime: {
         params: {
           eventsPerSecond: 10,
@@ -56,7 +64,7 @@ export function createSupabaseClient(config: SupabaseConnectionConfig): Supabase
   }
 }
 
-export const SUPABASE_SQL_SCHEMA = `-- Run this SQL in your Supabase SQL Editor to enable real-time User & Admin Panel sync
+export const SUPABASE_SQL_SCHEMA = `-- Run this SQL once in Supabase SQL Editor for MJ LAB User & Admin Panel sync
 create table if not exists public.projects (
   id text primary key,
   name text not null,
@@ -156,5 +164,33 @@ create table if not exists public.orders (
   updated_at timestamptz default now()
 );
 
+-- Enable Realtime on all tables
 alter publication supabase_realtime add table public.projects, public.banners, public.website_settings, public.team_members, public.contacts, public.visitors, public.contact_clicks, public.orders;
+
+-- Enable RLS with open policies for immediate Anon/Role Key sync (tighten if using Worker Role Key proxy only)
+alter table public.projects enable row level security;
+alter table public.banners enable row level security;
+alter table public.website_settings enable row level security;
+alter table public.team_members enable row level security;
+alter table public.contacts enable row level security;
+alter table public.visitors enable row level security;
+alter table public.contact_clicks enable row level security;
+alter table public.orders enable row level security;
+
+drop policy if exists "public_all_projects" on public.projects;
+create policy "public_all_projects" on public.projects for all using (true) with check (true);
+drop policy if exists "public_all_banners" on public.banners;
+create policy "public_all_banners" on public.banners for all using (true) with check (true);
+drop policy if exists "public_all_settings" on public.website_settings;
+create policy "public_all_settings" on public.website_settings for all using (true) with check (true);
+drop policy if exists "public_all_team" on public.team_members;
+create policy "public_all_team" on public.team_members for all using (true) with check (true);
+drop policy if exists "public_all_contacts" on public.contacts;
+create policy "public_all_contacts" on public.contacts for all using (true) with check (true);
+drop policy if exists "public_all_visitors" on public.visitors;
+create policy "public_all_visitors" on public.visitors for all using (true) with check (true);
+drop policy if exists "public_all_clicks" on public.contact_clicks;
+create policy "public_all_clicks" on public.contact_clicks for all using (true) with check (true);
+drop policy if exists "public_all_orders" on public.orders;
+create policy "public_all_orders" on public.orders for all using (true) with check (true);
 `;

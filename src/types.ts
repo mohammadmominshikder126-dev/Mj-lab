@@ -113,6 +113,7 @@ export interface OrderRequest {
 export interface SupabaseConnectionConfig {
   url: string;
   anonKey: string;
+  roleKey?: string;
   enabled: boolean;
 }
 

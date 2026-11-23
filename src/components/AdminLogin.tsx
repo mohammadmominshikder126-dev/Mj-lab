@@ -6,9 +6,6 @@ import {
   Eye,
   EyeOff,
   Lock,
-  LogOut,
-  MailCheck,
-  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
@@ -16,14 +13,10 @@ import { BrandLogo } from './BrandLogo';
 
 export const AdminLogin: React.FC = () => {
   const {
-    user,
-    isAdmin,
-    backendMode,
+    supabaseConnected,
     supabaseConfig,
     connectSupabase,
     adminLoginPassword,
-    sendAdminVerification,
-    adminLogout,
     settings,
   } = useData();
 
@@ -34,9 +27,9 @@ export const AdminLogin: React.FC = () => {
   const [infoMsg, setInfoMsg] = useState('');
   const [showSetup, setShowSetup] = useState(false);
 
-  // Optional Supabase key connect right on login
   const [sbUrl, setSbUrl] = useState(supabaseConfig.url);
   const [sbKey, setSbKey] = useState(supabaseConfig.anonKey);
+  const [sbRoleKey, setSbRoleKey] = useState(supabaseConfig.roleKey || '');
   const [connectingSb, setConnectingSb] = useState(false);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -51,22 +44,7 @@ export const AdminLogin: React.FC = () => {
     try {
       await adminLoginPassword(password);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Login failed.';
-      if (msg.includes('operation-not-allowed')) {
-        setError(
-          'Firebase Email/Password sign-in is disabled. Enable Email/Password in Firebase Console (Authentication → Sign-in method) or connect your Supabase key below.'
-        );
-        setShowSetup(true);
-      } else if (msg.includes('invalid-credential') || msg.includes('wrong-password')) {
-        setError('Invalid admin password. Please check your password and try again.');
-      } else if (msg.includes('user-not-found')) {
-        setError(
-          'Admin password user not created yet in Firebase Console (Authentication → Users). Create the admin user or connect Supabase below.'
-        );
-        setShowSetup(true);
-      } else {
-        setError(msg);
-      }
+      setError(err instanceof Error ? err.message : 'Invalid admin password.');
     } finally {
       setLoading(false);
     }
@@ -75,12 +53,18 @@ export const AdminLogin: React.FC = () => {
   const handleConnectSupabase = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setInfoMsg('');
     setConnectingSb(true);
     try {
-      await connectSupabase(sbUrl, sbKey);
-      setInfoMsg('Supabase connected! Enter your admin password (default: mjlab2026) to sign in.');
+      await connectSupabase(sbUrl, sbKey, sbRoleKey);
+      setInfoMsg('Supabase connected! Enter your admin password to open Dashboard.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Supabase connection failed.');
+      const msg = err instanceof Error ? err.message : 'Supabase connection failed.';
+      if (msg.includes('Keys saved!')) {
+        setInfoMsg(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setConnectingSb(false);
     }
@@ -107,64 +91,9 @@ export const AdminLogin: React.FC = () => {
 
           <span className="inline-flex items-center gap-1.5 text-[11px] text-[#00E676] font-medium">
             <Database className="w-3.5 h-3.5" />
-            <span>{backendMode === 'supabase' ? 'Supabase' : 'Firebase'}</span>
+            <span>{supabaseConnected ? 'Supabase Live' : 'Supabase'}</span>
           </span>
         </div>
-
-        {/* Unverified or non-admin Firebase session notice */}
-        {backendMode === 'firebase' && user && !isAdmin && (
-          <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 p-4 space-y-2.5">
-            <div className="flex items-start gap-2.5">
-              <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-100 space-y-1">
-                {!user.emailVerified ? (
-                  <>
-                    <p className="font-semibold">Verify Admin Email Once</p>
-                    <p className="text-amber-200/80">
-                      Password verified for <span className="font-mono">{user.email}</span>, but
-                      email verification is required by security rules.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-semibold">Unauthorized Account</p>
-                    <p className="text-amber-200/80">
-                      Signed-in account <span className="font-mono">{user.email}</span> is not
-                      authorized as admin.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {!user.emailVerified && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await sendAdminVerification();
-                      setInfoMsg('Verification email sent! Click the link in your inbox, then log in.');
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Failed to send verification email.');
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00E676] text-[#050B18] text-xs font-bold cursor-pointer"
-                >
-                  <MailCheck className="w-3.5 h-3.5" />
-                  <span>Send Verification Email</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={adminLogout}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-xs font-semibold text-amber-200 transition cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Reset Session</span>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Password-Only Login Form */}
         <form onSubmit={handlePasswordSubmit} className="space-y-4">
@@ -216,64 +145,56 @@ export const AdminLogin: React.FC = () => {
           </button>
         </form>
 
-        {/* Collapsible Setup & Supabase Key Connection */}
+        {/* Collapsible Supabase Key Setup */}
         <div className="pt-2 border-t border-white/10">
           <button
             type="button"
             onClick={() => setShowSetup((s) => !s)}
             className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 cursor-pointer py-1"
           >
-            <span>Password & Database Key Setup</span>
+            <span>Supabase Database Key Setup</span>
             {showSetup ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
 
           {showSetup && (
-            <div className="mt-3 space-y-4">
-              <div className="text-[11px] text-slate-300 bg-[#050B18] p-3 rounded-xl border border-slate-800 space-y-1.5">
-                <p className="font-semibold text-[#22D3EE]">Firebase Password Login Setup:</p>
-                <p>
-                  1. Open Firebase Console &rarr; Authentication &rarr; Sign-in method &rarr; Enable{' '}
-                  <strong>Email/Password</strong>.
-                </p>
-                <p>
-                  2. Under Authentication &rarr; Users, create user{' '}
-                  <span className="font-mono text-[#00E676]">nexasworld5@gmail.com</span> with your
-                  chosen password.
-                </p>
-              </div>
-
-              <form
-                onSubmit={handleConnectSupabase}
-                className="bg-[#050B18] p-3 rounded-xl border border-slate-800 space-y-2.5"
+            <form
+              onSubmit={handleConnectSupabase}
+              className="mt-3 bg-[#050B18] p-3.5 rounded-xl border border-slate-800 space-y-2.5"
+            >
+              <p className="text-[11px] font-semibold text-[#00E676]">
+                Connect Supabase Realtime Keys
+              </p>
+              <input
+                type="url"
+                required
+                placeholder="Supabase URL (https://xxx.supabase.co)"
+                value={sbUrl}
+                onChange={(e) => setSbUrl(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-[#0B162C] border border-slate-700 text-xs font-mono text-white"
+              />
+              <input
+                type="password"
+                required
+                placeholder="Supabase Anon Public Key"
+                value={sbKey}
+                onChange={(e) => setSbKey(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-[#0B162C] border border-slate-700 text-xs font-mono text-white"
+              />
+              <input
+                type="password"
+                placeholder="Supabase Service Role Key (Optional)"
+                value={sbRoleKey}
+                onChange={(e) => setSbRoleKey(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-[#0B162C] border border-slate-700 text-xs font-mono text-white"
+              />
+              <button
+                type="submit"
+                disabled={connectingSb}
+                className="w-full py-2 rounded-lg bg-[#22D3EE] text-[#050B18] font-bold text-xs cursor-pointer"
               >
-                <p className="text-[11px] font-semibold text-[#00E676]">
-                  Or Connect Supabase Realtime Key (Default Passcode: mjlab2026)
-                </p>
-                <input
-                  type="url"
-                  required
-                  placeholder="Supabase URL (https://xxx.supabase.co)"
-                  value={sbUrl}
-                  onChange={(e) => setSbUrl(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#0B162C] border border-slate-700 text-xs font-mono text-white"
-                />
-                <input
-                  type="password"
-                  required
-                  placeholder="Supabase Anon Public Key"
-                  value={sbKey}
-                  onChange={(e) => setSbKey(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#0B162C] border border-slate-700 text-xs font-mono text-white"
-                />
-                <button
-                  type="submit"
-                  disabled={connectingSb}
-                  className="w-full py-2 rounded-lg bg-[#22D3EE] text-[#050B18] font-bold text-xs cursor-pointer"
-                >
-                  {connectingSb ? 'Connecting...' : 'Connect Supabase Key'}
-                </button>
-              </form>
-            </div>
+                {connectingSb ? 'Connecting...' : 'Connect Supabase Key'}
+              </button>
+            </form>
           )}
         </div>
       </div>

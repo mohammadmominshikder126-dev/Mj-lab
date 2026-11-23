@@ -1,0 +1,12 @@
+{
+  "name": "mj-lab",
+  "main": "worker.ts",
+  "compatibility_date": "2025-05-01",
+  "build": {
+    "command": "npm run build"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  }
+}

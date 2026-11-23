@@ -139,7 +139,7 @@ export const DEFAULT_TEAM: TeamMember[] = [
     id: 'team_lead_mj',
     name: 'MJ Founder',
     role: 'Lead Web Developer & UI Designer',
-    bio: 'Specializes in full-stack React, TypeScript, Firebase, and high-converting business websites.',
+    bio: 'Specializes in full-stack React, TypeScript, Supabase, and high-converting business websites.',
     avatarUrl: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

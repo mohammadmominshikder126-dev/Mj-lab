@@ -24,12 +24,10 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useData } from '../context/DataContext';
 import { uploadProjectOrBannerImage } from '../lib/imageUtils';
 import { buildWhatsAppLink, formatRelativeTime } from '../lib/whatsapp';
 import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
-import { db } from '../lib/firebase';
 import {
   AdminTab,
   Banner,
@@ -55,7 +53,7 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
   onNavigateTab,
 }) => {
   const {
-    user,
+    adminDisplayName,
     projects,
     banners,
     settings,
@@ -64,7 +62,9 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
     visitors,
     contactClicks,
     orders,
-    backendMode,
+    supabaseConnected,
+    hasWorkerRole,
+    supabaseError,
     supabaseConfig,
     connectSupabase,
     disconnectSupabase,
@@ -214,8 +214,15 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
   // --- SUPABASE CONNECTION FORM ---
   const [sbUrl, setSbUrl] = useState(supabaseConfig.url);
   const [sbKey, setSbKey] = useState(supabaseConfig.anonKey);
+  const [sbRoleKey, setSbRoleKey] = useState(supabaseConfig.roleKey || '');
   const [connectingSb, setConnectingSb] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  useEffect(() => {
+    setSbUrl(supabaseConfig.url);
+    setSbKey(supabaseConfig.anonKey);
+    setSbRoleKey(supabaseConfig.roleKey || '');
+  }, [supabaseConfig.url, supabaseConfig.anonKey, supabaseConfig.roleKey]);
 
   // --- TEAM FORM ---
   const [teamForm, setTeamForm] = useState({
@@ -229,10 +236,6 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
 
   // --- CONTACTS / ORDERS TAB ---
   const [inboxTab, setInboxTab] = useState<'messages' | 'orders'>('messages');
-
-  // --- ACCOUNT / ADD ADMIN ---
-  const [newAdminUid, setNewAdminUid] = useState('');
-  const [newAdminEmail, setNewAdminEmail] = useState('');
 
   // --- PASSWORD CHANGE ---
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
@@ -412,10 +415,11 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
     e.preventDefault();
     setConnectingSb(true);
     try {
-      await connectSupabase(sbUrl, sbKey);
+      await connectSupabase(sbUrl, sbKey, sbRoleKey);
       showToast('Connected to Supabase Realtime!');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Supabase connection failed.', 'err');
+      const msg = err instanceof Error ? err.message : 'Supabase connection failed.';
+      showToast(msg, msg.includes('Keys saved!') ? 'ok' : 'err');
     } finally {
       setConnectingSb(false);
     }
@@ -1422,23 +1426,38 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
                 <Database className="w-5 h-5 text-[#00E676]" />
                 <div>
                   <h2 className="text-base font-display font-bold text-white">
-                    Supabase Realtime Connection (Optional Key Sync)
+                    Supabase Realtime & Role Key Connection
                   </h2>
                   <p className="text-xs text-slate-400">
                     Active Database:{' '}
-                    <span className="text-[#00E676] font-semibold">
-                      {backendMode === 'supabase' ? 'Supabase Realtime' : 'Firebase Firestore (Live)'}
+                    <span
+                      className={`font-semibold ${
+                        supabaseConnected ? 'text-[#00E676]' : 'text-amber-300'
+                      }`}
+                    >
+                      {supabaseConnected
+                        ? hasWorkerRole
+                          ? 'Supabase Live (Cloudflare Worker Role Key)'
+                          : 'Supabase Live'
+                        : 'Local Preview (Enter Supabase Keys below)'}
                     </span>
                   </p>
                 </div>
               </div>
-              {backendMode === 'supabase' && (
+              {supabaseConnected && (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={syncingSeed}
                     onClick={() =>
-                      seedSupabaseData().then(() => showToast('Seeded data into Supabase!'))
+                      seedSupabaseData()
+                        .then(() => showToast('Seeded data into Supabase!'))
+                        .catch((err) =>
+                          showToast(
+                            err instanceof Error ? err.message : 'Failed to sync seed data.',
+                            'err'
+                          )
+                        )
                     }
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#22D3EE] text-[#050B18] text-xs font-bold cursor-pointer"
                   >
@@ -1449,7 +1468,7 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
                     type="button"
                     onClick={() => {
                       disconnectSupabase();
-                      showToast('Switched back to Firebase Firestore.');
+                      showToast('Supabase disconnected. Using local browser preview.');
                     }}
                     className="px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-300 text-xs font-medium cursor-pointer"
                   >
@@ -1458,6 +1477,14 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
                 </div>
               )}
             </div>
+
+            {supabaseError && (
+              <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 p-3 text-xs text-amber-200">
+                Supabase table check notice: <span className="font-mono">{supabaseError}</span>.
+                Click &ldquo;Copy Supabase SQL Setup&rdquo; below and run it once in your Supabase
+                SQL Editor.
+              </div>
+            )}
 
             <form onSubmit={handleConnectSupabase} className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1478,6 +1505,13 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700 text-xs font-mono text-white"
                 />
               </div>
+              <input
+                type="password"
+                placeholder="Supabase Service Role Key (Optional — auto-used if configured in Cloudflare Worker)"
+                value={sbRoleKey}
+                onChange={(e) => setSbRoleKey(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700 text-xs font-mono text-white"
+              />
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
@@ -1844,7 +1878,7 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
               Account Settings
             </h1>
             <p className="text-xs sm:text-sm text-slate-400">
-              Current admin session details and authorized admin access control.
+              Current admin session details and Supabase database sync status.
             </p>
           </div>
 
@@ -1855,56 +1889,40 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
               </div>
               <div>
                 <div className="text-sm font-display font-bold text-white">
-                  {user?.displayName || 'MJ LAB Admin'}
+                  {adminDisplayName}
                 </div>
-                <div className="text-xs font-mono text-[#00E676]">{user?.email}</div>
+                <div className="text-xs font-mono text-[#00E676]">
+                  Password-Protected Admin Session
+                </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  UID: <span className="font-mono">{user?.uid}</span>
+                  Database:{' '}
+                  <span className="font-mono text-slate-200">
+                    {supabaseConnected
+                      ? hasWorkerRole
+                        ? 'Supabase Live (Cloudflare Worker Role Key)'
+                        : 'Supabase Live'
+                      : 'Local Browser Mode (Connect Supabase in Website Settings)'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-white/10 space-y-3">
-              <h2 className="text-sm font-display font-bold text-white">Authorize Additional Admin</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="Firebase User UID"
-                  value={newAdminUid}
-                  onChange={(e) => setNewAdminUid(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl bg-[#050B18] border border-slate-700 text-xs font-mono text-white"
-                />
-                <input
-                  type="email"
-                  placeholder="Admin Email"
-                  value={newAdminEmail}
-                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl bg-[#050B18] border border-slate-700 text-xs text-white"
-                />
-              </div>
+            <div className="pt-3 border-t border-white/10 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={async () => {
-                  if (!newAdminUid.trim() || !newAdminEmail.trim()) {
-                    showToast('Both UID and Email are required.', 'err');
-                    return;
-                  }
-                  try {
-                    await setDoc(doc(db, 'admins', newAdminUid.trim()), {
-                      email: newAdminEmail.trim(),
-                      role: 'admin',
-                      updatedAt: serverTimestamp(),
-                    });
-                    setNewAdminUid('');
-                    setNewAdminEmail('');
-                    showToast('Admin authorized!');
-                  } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Failed to add admin.', 'err');
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-[#22D3EE] text-[#050B18] font-bold text-xs cursor-pointer"
+                onClick={() => onNavigateTab('password')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#22D3EE] text-[#050B18] font-bold text-xs cursor-pointer"
               >
-                Grant Admin Access
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Change Admin Password</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('settings')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#050B18] border border-slate-700 text-xs font-medium text-white hover:border-[#00E676] cursor-pointer"
+              >
+                <Database className="w-3.5 h-3.5 text-[#00E676]" />
+                <span>Manage Supabase Keys</span>
               </button>
             </div>
           </div>
@@ -1919,7 +1937,7 @@ export const AdminSections: React.FC<AdminSectionsProps> = ({
               Change Password
             </h1>
             <p className="text-xs sm:text-sm text-slate-400">
-              Update your Email/Password Firebase authentication credentials.
+              Update your Admin Panel login password.
             </p>
           </div>
 

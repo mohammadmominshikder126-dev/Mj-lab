@@ -28,7 +28,8 @@ import { AdminDashboardTab } from './AdminDashboardTab';
 import { AdminSections } from './AdminSections';
 
 export const AdminPanel: React.FC = () => {
-  const { authReady, isAdmin, user, settings, backendMode, adminLogout, contacts } = useData();
+  const { authReady, isAdmin, settings, supabaseConnected, supabaseError, adminLogout, contacts } =
+    useData();
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -219,7 +220,7 @@ export const AdminPanel: React.FC = () => {
         <div className="p-3 border-t border-white/5">
           <div className="rounded-xl bg-[#0B162C] border border-cyan-500/20 p-3 flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-full bg-[#102A4C] border border-cyan-400/30 flex items-center justify-center text-xs font-bold text-[#22D3EE] shrink-0">
-              {(user?.displayName || user?.email || 'AD').slice(0, 2).toUpperCase()}
+              MJ
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#00E676]">
@@ -256,10 +257,14 @@ export const AdminPanel: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0B162C] border border-cyan-500/25 text-xs font-medium text-[#00E676] hover:border-[#00E676]/60 transition cursor-pointer"
+              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0B162C] border text-xs font-medium transition cursor-pointer ${
+                supabaseConnected
+                  ? 'border-cyan-500/25 text-[#00E676] hover:border-[#00E676]/60'
+                  : 'border-amber-400/40 text-amber-300 hover:border-amber-300'
+              }`}
             >
               <Database className="w-3.5 h-3.5" />
-              <span>{backendMode === 'supabase' ? 'Supabase Live' : 'Firebase Live'}</span>
+              <span>{supabaseConnected ? 'Supabase Live' : 'Connect Supabase'}</span>
             </button>
 
             <div className="hidden md:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0B162C] border border-slate-700/80 text-xs text-slate-200 font-mono tabular-nums">
@@ -283,6 +288,20 @@ export const AdminPanel: React.FC = () => {
 
         {/* ACTIVE ROUTE CONTENT */}
         <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
+          {supabaseError && activeTab !== 'settings' && (
+            <div className="mb-4 rounded-xl bg-amber-500/10 border border-amber-400/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-200">
+              <span>
+                Supabase sync notice: <span className="font-mono">{supabaseError}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="px-3 py-1.5 rounded-lg bg-amber-400 text-[#050B18] font-bold text-xs shrink-0 cursor-pointer self-start sm:self-auto"
+              >
+                Open Supabase Setup
+              </button>
+            </div>
+          )}
           {activeTab === 'dashboard' ? (
             <AdminDashboardTab
               onNavigateTab={setActiveTab}
