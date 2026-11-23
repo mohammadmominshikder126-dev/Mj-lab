@@ -164,10 +164,31 @@ create table if not exists public.orders (
   updated_at timestamptz default now()
 );
 
--- Enable Realtime on all tables
-alter publication supabase_realtime add table public.projects, public.banners, public.website_settings, public.team_members, public.contacts, public.visitors, public.contact_clicks, public.orders;
+-- Safely enable Realtime on all tables (idempotent)
+do $$
+declare
+  t text;
+  tables text[] := array[
+    'projects',
+    'banners',
+    'website_settings',
+    'team_members',
+    'contacts',
+    'visitors',
+    'contact_clicks',
+    'orders'
+  ];
+begin
+  foreach t in array tables loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    exception when duplicate_object then
+      null;
+    end;
+  end loop;
+end $$;
 
--- Enable RLS with open policies for immediate Anon/Role Key sync (tighten if using Worker Role Key proxy only)
+-- Enable RLS with policies for Anon + Service Role sync
 alter table public.projects enable row level security;
 alter table public.banners enable row level security;
 alter table public.website_settings enable row level security;
@@ -193,4 +214,12 @@ drop policy if exists "public_all_clicks" on public.contact_clicks;
 create policy "public_all_clicks" on public.contact_clicks for all using (true) with check (true);
 drop policy if exists "public_all_orders" on public.orders;
 create policy "public_all_orders" on public.orders for all using (true) with check (true);
+
+-- Optional public storage bucket for uploaded images
+insert into storage.buckets (id, name, public)
+values ('mjlab-assets', 'mjlab-assets', true)
+on conflict (id) do nothing;
+
+-- Reload Supabase PostgREST schema cache immediately
+notify pgrst, 'reload schema';
 `;
