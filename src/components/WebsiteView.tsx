@@ -10,7 +10,6 @@ import {
   Globe,
   Home,
   LayoutGrid,
-  MessageCircle,
   Palette,
   Phone,
   Play,
@@ -27,6 +26,17 @@ import { buildWhatsAppLink } from '../lib/whatsapp';
 import { Project, ProjectCategory } from '../types';
 
 type NavTab = 'home' | 'projects' | 'about' | 'profile';
+
+const WhatsAppLogo: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+  <svg
+    viewBox="0 0 32 32"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M16.01 3C8.83 3 3 8.83 3 16.01c0 2.52.72 4.97 2.08 7.08L3.7 28.3l5.35-1.36A12.94 12.94 0 0 0 16.01 29C23.17 29 29 23.17 29 16.01 29 8.83 23.17 3 16.01 3Zm0 23.62c-2.16 0-4.27-.58-6.11-1.69l-.44-.26-3.17.81.84-3.09-.29-.46a10.56 10.56 0 0 1-1.62-5.62c0-5.85 4.76-10.61 10.62-10.61 5.85 0 10.61 4.76 10.61 10.61 0 5.85-4.76 10.61-10.61 10.61Zm5.82-7.95c-.32-.16-1.88-.93-2.17-1.03-.29-.11-.5-.16-.71.16-.21.32-.82 1.03-1 1.24-.19.21-.37.24-.69.08-.32-.16-1.35-.5-2.57-1.59-.95-.85-1.59-1.89-1.78-2.21-.18-.32-.02-.49.14-.65.14-.14.32-.37.48-.55.16-.19.21-.32.32-.53.11-.21.05-.4-.03-.56-.08-.16-.71-1.72-.98-2.36-.26-.62-.52-.54-.71-.55h-.61c-.21 0-.55.08-.84.4-.29.32-1.11 1.08-1.11 2.64 0 1.56 1.13 3.06 1.29 3.27.16.21 2.23 3.41 5.41 4.78.76.33 1.35.52 1.81.67.76.24 1.45.21 2 .13.61-.09 1.88-.77 2.15-1.51.26-.74.26-1.37.18-1.51-.08-.13-.29-.21-.61-.37Z" />
+  </svg>
+);
 
 export const WebsiteView: React.FC = () => {
   const {
@@ -124,13 +134,6 @@ export const WebsiteView: React.FC = () => {
 
   const currentBanner = activeBanners[slideIndex] || activeBanners[0];
 
-  const themeBg =
-    settings.theme === 'Midnight'
-      ? 'bg-[#030712]'
-      : settings.theme === 'Ocean'
-        ? 'bg-[#041022]'
-        : 'bg-[#050B18]';
-
   const handleCategoryClick = (category: ProjectCategory) => {
     setSelectedCategory((prev) => (prev === category ? 'All' : category));
     if (activeTab !== 'home' && activeTab !== 'projects') {
@@ -218,16 +221,16 @@ export const WebsiteView: React.FC = () => {
   );
 
   return (
-    <div className={`min-h-screen ${themeBg} text-white pb-24 relative overflow-x-hidden`}>
-      {/* Subtle Ambient Navy Glow */}
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 pb-24 relative overflow-x-hidden">
+      {/* Soft Harmonious Sky-Emerald Top Glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(14,116,144,0.16),_transparent_55%)]"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(14,165,233,0.10),_transparent_58%)]"
       />
 
       {/* Main Responsive Container */}
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6 sm:space-y-8">
-        {/* TOP HEADER (Matches Reference Image 1) */}
+        {/* TOP HEADER */}
         <header className="flex items-center justify-between gap-3 py-2">
           <button
             type="button"
@@ -237,27 +240,40 @@ export const WebsiteView: React.FC = () => {
             <BrandLogo logoUrl={settings.logoUrl} size="md" siteName={settings.siteName} />
             <div>
               <div className="text-xl sm:text-2xl font-display font-extrabold tracking-tight leading-none">
-                <span className="text-white">{siteNameParts.first}</span>
+                <span className="text-[#0F172A]">{siteNameParts.first}</span>
                 {siteNameParts.rest && (
-                  <span className="text-[#22D3EE] ml-1.5">{siteNameParts.rest}</span>
+                  <span className="text-[#0284C7] ml-1.5">{siteNameParts.rest}</span>
                 )}
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-none">
+              <p className="text-xs sm:text-sm text-slate-500 mt-1 leading-none">
                 {settings.tagline}
               </p>
             </div>
           </button>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            {/* Prominent Top WhatsApp Logo Button */}
+            <a
+              href={generalWhatsAppHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Contact on WhatsApp"
+              title="Chat on WhatsApp"
+              onClick={() => recordContactClick('header_whatsapp_logo')}
+              className="inline-flex items-center justify-center w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-[#25D366] text-white shadow-[0_8px_20px_rgba(37,211,102,0.35)] hover:bg-[#1FB858] hover:scale-105 transition shrink-0"
+            >
+              <WhatsAppLogo className="w-7 h-7 sm:w-8 sm:h-8" />
+            </a>
+
             <button
               type="button"
               onClick={() => {
                 setActiveTab('projects');
                 setShowAllProjects(true);
               }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0B162C]/90 border border-cyan-500/25 text-xs sm:text-sm font-medium text-white hover:border-[#00E676]/60 transition whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs sm:text-sm font-semibold text-[#0F172A] hover:border-[#0284C7] transition whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-[#00E676] shrink-0" aria-hidden="true" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#25D366] shrink-0" aria-hidden="true" />
               <span>Portfolio</span>
             </button>
           </div>
@@ -266,7 +282,7 @@ export const WebsiteView: React.FC = () => {
         {/* HOME & PROJECTS MAIN CONTENT */}
         {(activeTab === 'home' || activeTab === 'projects') && (
           <>
-            {/* FOUR SERVICE ICONS (Matches Reference Image 1) */}
+            {/* FOUR SERVICE ICONS */}
             {activeTab === 'home' && (
               <section aria-label="Services" className="grid grid-cols-4 gap-2.5 sm:gap-4">
                 <a
@@ -274,12 +290,12 @@ export const WebsiteView: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => recordContactClick('service_icon_whatsapp')}
-                  className="group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-[#0B162C]/90 border border-cyan-500/15 hover:border-[#00E676]/50 transition min-h-[84px] sm:min-h-[96px]"
+                  className="group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-[#25D366] transition min-h-[84px] sm:min-h-[96px]"
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#00E676]/10 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                    <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-[#00E676]" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#25D366]/12 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                    <WhatsAppLogo className="w-5 h-5 sm:w-6 sm:h-6 text-[#25D366]" />
                   </div>
-                  <span className="text-[11px] sm:text-xs font-medium text-slate-100 leading-tight">
+                  <span className="text-[11px] sm:text-xs font-semibold text-slate-800 leading-tight">
                     WhatsApp Contact
                   </span>
                 </a>
@@ -287,16 +303,16 @@ export const WebsiteView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCategoryClick('New Design')}
-                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-[#0B162C]/90 border transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
+                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-white border shadow-sm hover:shadow-md transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
                     selectedCategory === 'New Design'
-                      ? 'border-[#22D3EE] shadow-[0_0_20px_rgba(34,211,238,0.18)]'
-                      : 'border-cyan-500/15 hover:border-[#22D3EE]/50'
+                      ? 'border-[#0284C7] ring-2 ring-sky-200'
+                      : 'border-slate-200 hover:border-[#0284C7]'
                   }`}
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                    <Palette className="w-5 h-5 sm:w-6 sm:h-6 text-[#22D3EE]" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-sky-50 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                    <Palette className="w-5 h-5 sm:w-6 sm:h-6 text-[#0284C7]" />
                   </div>
-                  <span className="text-[11px] sm:text-xs font-medium text-slate-100 leading-tight">
+                  <span className="text-[11px] sm:text-xs font-semibold text-slate-800 leading-tight">
                     New Design
                   </span>
                 </button>
@@ -304,16 +320,16 @@ export const WebsiteView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCategoryClick('E-Commerce')}
-                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-[#0B162C]/90 border transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
+                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-white border shadow-sm hover:shadow-md transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
                     selectedCategory === 'E-Commerce'
-                      ? 'border-[#00E676] shadow-[0_0_20px_rgba(0,230,118,0.18)]'
-                      : 'border-cyan-500/15 hover:border-[#00E676]/50'
+                      ? 'border-[#16A34A] ring-2 ring-emerald-200'
+                      : 'border-slate-200 hover:border-[#16A34A]'
                   }`}
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#00E676]/10 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                    <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-[#00E676]" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                    <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-[#16A34A]" />
                   </div>
-                  <span className="text-[11px] sm:text-xs font-medium text-slate-100 leading-tight">
+                  <span className="text-[11px] sm:text-xs font-semibold text-slate-800 leading-tight">
                     E-Commerce
                   </span>
                 </button>
@@ -321,35 +337,35 @@ export const WebsiteView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCategoryClick('Business')}
-                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-[#0B162C]/90 border transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
+                  className={`group flex flex-col items-center justify-center text-center p-3 sm:p-4 rounded-2xl bg-white border shadow-sm hover:shadow-md transition min-h-[84px] sm:min-h-[96px] cursor-pointer ${
                     selectedCategory === 'Business'
-                      ? 'border-[#22D3EE] shadow-[0_0_20px_rgba(34,211,238,0.18)]'
-                      : 'border-cyan-500/15 hover:border-[#22D3EE]/50'
+                      ? 'border-[#2563EB] ring-2 ring-blue-200'
+                      : 'border-slate-200 hover:border-[#2563EB]'
                   }`}
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                    <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-[#22D3EE]" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                    <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-[#2563EB]" />
                   </div>
-                  <span className="text-[11px] sm:text-xs font-medium text-slate-100 leading-tight">
+                  <span className="text-[11px] sm:text-xs font-semibold text-slate-800 leading-tight">
                     Business
                   </span>
                 </button>
               </section>
             )}
 
-            {/* HERO BANNER SLIDER (Matches Reference Image 1) */}
+            {/* HERO BANNER SLIDER */}
             {activeTab === 'home' && currentBanner && (
               <section
                 aria-label="Featured Showcase Banner"
                 onMouseEnter={() => setIsPaused(true)}
                 onMouseLeave={() => setIsPaused(false)}
-                className="relative rounded-2xl overflow-hidden border border-cyan-400/20 bg-gradient-to-br from-[#071A40] via-[#092458] to-[#051029] shadow-[0_18px_50px_rgba(3,10,28,0.65)]"
+                className="relative rounded-2xl overflow-hidden border border-slate-200 bg-gradient-to-br from-[#0A1F44] via-[#102E63] to-[#081938] shadow-[0_14px_38px_rgba(15,23,42,0.14)]"
               >
                 <div className="grid grid-cols-1 md:grid-cols-12 items-center min-h-[230px] sm:min-h-[280px] lg:min-h-[330px]">
                   {/* Left Copy Column */}
                   <div className="md:col-span-7 p-6 sm:p-8 lg:p-10 z-10 space-y-3 sm:space-y-4">
                     {currentBanner.badgeText && (
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#061530]/80 border border-cyan-400/25 text-xs font-medium text-slate-200">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-medium text-slate-100">
                         <Play className="w-3 h-3 text-[#00E676] fill-[#00E676]" />
                         <span>{currentBanner.badgeText}</span>
                       </div>
@@ -382,7 +398,7 @@ export const WebsiteView: React.FC = () => {
                               ?.scrollIntoView({ behavior: 'smooth' });
                           }
                         }}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#05122B]/85 border border-[#00E676]/70 text-xs sm:text-sm font-semibold text-white hover:bg-[#00E676] hover:text-[#050B18] transition whitespace-nowrap cursor-pointer"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-[#0F172A] border border-white/80 text-xs sm:text-sm font-bold hover:bg-[#00E676] hover:text-[#050B18] hover:border-[#00E676] transition whitespace-nowrap cursor-pointer shadow-sm"
                       >
                         <span>{currentBanner.buttonText || 'View Portfolio'}</span>
                         <ArrowRight className="w-4 h-4" />
@@ -394,14 +410,14 @@ export const WebsiteView: React.FC = () => {
                   <div className="md:col-span-5 relative h-44 sm:h-56 md:h-full min-h-[200px] flex items-center justify-center p-4 sm:p-6">
                     <div
                       aria-hidden="true"
-                      className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(34,211,238,0.28),_transparent_68%)]"
+                      className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(56,189,248,0.28),_transparent_68%)]"
                     />
                     {currentBanner.imageUrl ? (
                       <img
                         src={currentBanner.imageUrl}
                         alt={currentBanner.title}
                         referrerPolicy="no-referrer"
-                        className="relative z-10 w-full h-full max-h-[260px] object-cover rounded-xl border border-cyan-400/25 shadow-2xl"
+                        className="relative z-10 w-full h-full max-h-[260px] object-cover rounded-xl border border-white/20 shadow-2xl"
                       />
                     ) : (
                       <div className="relative z-10 w-full h-44 rounded-xl bg-[#071A40] border border-cyan-400/20 flex items-center justify-center">
@@ -422,7 +438,7 @@ export const WebsiteView: React.FC = () => {
                           (prev) => (prev - 1 + activeBanners.length) % activeBanners.length
                         )
                       }
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#050B18]/75 border border-white/15 flex items-center justify-center text-white hover:border-[#22D3EE] transition cursor-pointer"
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/90 border border-slate-200 flex items-center justify-center text-[#0F172A] hover:bg-white transition cursor-pointer shadow"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -430,7 +446,7 @@ export const WebsiteView: React.FC = () => {
                       type="button"
                       aria-label="Next banner"
                       onClick={() => setSlideIndex((prev) => (prev + 1) % activeBanners.length)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#050B18]/75 border border-white/15 flex items-center justify-center text-white hover:border-[#22D3EE] transition cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/90 border border-slate-200 flex items-center justify-center text-[#0F172A] hover:bg-white transition cursor-pointer shadow"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -445,8 +461,8 @@ export const WebsiteView: React.FC = () => {
                           onClick={() => setSlideIndex(idx)}
                           className={`h-2 rounded-full transition-all cursor-pointer ${
                             idx === slideIndex
-                              ? 'w-5 bg-[#22D3EE]'
-                              : 'w-2 bg-white/35 hover:bg-white/60'
+                              ? 'w-5 bg-[#00E676]'
+                              : 'w-2 bg-white/45 hover:bg-white/80'
                           }`}
                         />
                       ))}
@@ -460,13 +476,13 @@ export const WebsiteView: React.FC = () => {
             <section id="projects-section" className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <span className="w-1 h-6 rounded-full bg-[#22D3EE]" aria-hidden="true" />
+                  <span className="w-1 h-6 rounded-full bg-[#0284C7]" aria-hidden="true" />
                   <h2 className="text-lg sm:text-2xl font-display font-bold tracking-tight">
-                    <span className="text-white">My </span>
-                    <span className="text-[#00E676]">Projects</span>
+                    <span className="text-[#0F172A]">My </span>
+                    <span className="text-[#16A34A]">Projects</span>
                   </h2>
                   {selectedCategory !== 'All' && (
-                    <span className="text-xs text-[#22D3EE] font-medium">
+                    <span className="text-xs text-[#0284C7] font-semibold">
                       · {selectedCategory}
                     </span>
                   )}
@@ -477,7 +493,7 @@ export const WebsiteView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setSelectedCategory('All')}
-                      className="px-3 py-1.5 rounded-full bg-[#0B162C] border border-slate-700 text-xs text-slate-300 hover:text-white transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs text-slate-700 hover:text-[#0F172A] hover:border-slate-300 transition cursor-pointer shadow-sm"
                     >
                       Clear Filter
                     </button>
@@ -486,10 +502,10 @@ export const WebsiteView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowAllProjects((prev) => !prev)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0B162C] border border-cyan-500/25 text-xs sm:text-sm font-medium text-white hover:border-[#22D3EE] transition whitespace-nowrap cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs sm:text-sm font-semibold text-[#0F172A] hover:border-[#0284C7] transition whitespace-nowrap cursor-pointer"
                     >
                       <span>{showAllProjects ? 'Show Less' : 'View All'}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-[#22D3EE]" />
+                      <ArrowRight className="w-3.5 h-3.5 text-[#0284C7]" />
                     </button>
                   )}
                 </div>
@@ -497,7 +513,7 @@ export const WebsiteView: React.FC = () => {
 
               {/* Search & Category Tabs on full Projects View */}
               {(activeTab === 'projects' || showAllProjects) && (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0B162C]/70 border border-cyan-500/15 rounded-2xl p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 shadow-sm rounded-2xl p-3">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {(['All', 'New Design', 'E-Commerce', 'Business', 'Portfolio'] as const).map(
                       (cat) => (
@@ -505,10 +521,10 @@ export const WebsiteView: React.FC = () => {
                           key={cat}
                           type="button"
                           onClick={() => setSelectedCategory(cat)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap cursor-pointer ${
                             selectedCategory === cat
-                              ? 'bg-[#22D3EE] text-[#050B18] font-semibold'
-                              : 'bg-[#050B18]/70 text-slate-300 hover:text-white'
+                              ? 'bg-[#0284C7] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                         >
                           {cat}
@@ -523,40 +539,37 @@ export const WebsiteView: React.FC = () => {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search projects..."
-                      className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#050B18] border border-slate-700/80 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                      className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                     />
                   </div>
                 </div>
               )}
 
-              {/* 2-Column Side-by-Side Project Grid (Matches Reference Image 1) */}
+              {/* 2-Column Side-by-Side Project Grid */}
               {visibleProjects.length === 0 ? (
-                <div className="rounded-2xl bg-[#0B162C]/70 border border-cyan-500/15 p-8 text-center space-y-2">
-                  <FolderKanban className="w-9 h-9 text-[#22D3EE] mx-auto opacity-80" />
-                  <p className="text-sm font-medium text-white">No projects match this filter</p>
-                  <p className="text-xs text-slate-400">
+                <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-8 text-center space-y-2">
+                  <FolderKanban className="w-9 h-9 text-[#0284C7] mx-auto opacity-80" />
+                  <p className="text-sm font-semibold text-[#0F172A]">No projects match this filter</p>
+                  <p className="text-xs text-slate-500">
                     Select another category or clear your search query.
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:gap-5">
                   {visibleProjects.map((project) => {
-                    const waLink =
-                      project.whatsappUrl && project.whatsappUrl.startsWith('http')
-                        ? project.whatsappUrl
-                        : buildWhatsAppLink(
-                            settings.whatsappNumber,
-                            `Hello ${settings.siteName}! I am interested in the "${project.name}" (${project.category}) website.`
-                          );
+                    const waLink = buildWhatsAppLink(
+                      settings.whatsappNumber,
+                      `Hello ${settings.siteName}! I am interested in the "${project.name}" (${project.category}) website.`
+                    );
 
                     return (
                       <article
                         key={project.id}
-                        className="group flex flex-col justify-between rounded-2xl bg-[#0B162C]/90 border border-cyan-500/15 hover:border-cyan-400/40 p-2.5 sm:p-4 transition"
+                        className="group flex flex-col justify-between rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-sky-300 p-2.5 sm:p-4 transition"
                       >
                         <div>
                           {/* Project Thumbnail + Live Badge */}
-                          <div className="relative aspect-[16/10] rounded-xl overflow-hidden bg-[#060E20] border border-white/5 mb-3">
+                          <div className="relative aspect-[16/10] rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 mb-3">
                             {project.imageUrl ? (
                               <img
                                 src={project.imageUrl}
@@ -565,25 +578,25 @@ export const WebsiteView: React.FC = () => {
                                 className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                               />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#0A1F44] to-[#061024]">
-                                <Globe className="w-8 h-8 text-[#22D3EE]/70" />
+                              <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                                <Globe className="w-8 h-8 text-[#0284C7]/70" />
                               </div>
                             )}
-                            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-[#00E676] text-[#050B18] text-[10px] sm:text-xs font-bold leading-tight">
+                            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-[#25D366] text-white text-[10px] sm:text-xs font-bold leading-tight shadow-sm">
                               Live
                             </span>
                           </div>
 
                           {/* Title, Category & Description */}
                           <div className="space-y-1 px-0.5">
-                            <h3 className="text-sm sm:text-base font-display font-bold text-white leading-snug line-clamp-1">
+                            <h3 className="text-sm sm:text-base font-display font-bold text-[#0F172A] leading-snug line-clamp-1">
                               {project.name}
                             </h3>
-                            <p className="text-[11px] sm:text-xs text-[#22D3EE] font-medium">
+                            <p className="text-[11px] sm:text-xs text-[#0284C7] font-semibold">
                               {project.category}
                               {project.price ? ` · ${project.price}` : ''}
                             </p>
-                            <p className="text-[11px] sm:text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                            <p className="text-[11px] sm:text-xs text-slate-600 line-clamp-2 leading-relaxed">
                               {project.description}
                             </p>
                           </div>
@@ -594,9 +607,9 @@ export const WebsiteView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setDemoProject(project)}
-                            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-[#050B18]/80 border border-slate-500/50 text-[11px] sm:text-xs font-semibold text-white hover:border-[#22D3EE] transition whitespace-nowrap cursor-pointer"
+                            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-100 border border-slate-300 text-[11px] sm:text-xs font-semibold text-slate-800 hover:bg-slate-200/80 hover:border-[#0284C7] transition whitespace-nowrap cursor-pointer"
                           >
-                            <Play className="w-3 h-3 fill-white shrink-0" />
+                            <Play className="w-3 h-3 fill-slate-800 shrink-0" />
                             <span>Live Demo</span>
                           </button>
 
@@ -605,9 +618,9 @@ export const WebsiteView: React.FC = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => recordContactClick('project_card_whatsapp', project)}
-                            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-[#00E676] text-[#050B18] text-[11px] sm:text-xs font-bold hover:brightness-110 transition whitespace-nowrap"
+                            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-[#25D366] text-white text-[11px] sm:text-xs font-bold hover:bg-[#1FB858] transition whitespace-nowrap shadow-sm"
                           >
-                            <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                            <WhatsAppLogo className="w-3.5 h-3.5 shrink-0" />
                             <span>Contact</span>
                           </a>
                         </div>
@@ -620,19 +633,19 @@ export const WebsiteView: React.FC = () => {
           </>
         )}
 
-        {/* ABOUT US & TEAM SECTION (Shown on About tab AND below Home on desktop/scroll) */}
+        {/* ABOUT US & TEAM SECTION */}
         {(activeTab === 'about' || activeTab === 'home') && (
           <section
             id="about-section"
-            className="rounded-2xl bg-[#0B162C]/80 border border-cyan-500/15 p-5 sm:p-7 space-y-6"
+            className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 sm:p-7 space-y-6"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-2 max-w-2xl">
-                <p className="text-xs font-semibold text-[#22D3EE]">About {settings.siteName}</p>
-                <h2 className="text-xl sm:text-2xl font-display font-bold text-white text-balance">
+                <p className="text-xs font-bold text-[#0284C7]">About {settings.siteName}</p>
+                <h2 className="text-xl sm:text-2xl font-display font-bold text-[#0F172A] text-balance">
                   {settings.aboutTitle}
                 </h2>
-                <p className="text-sm text-slate-300 leading-relaxed">
+                <p className="text-sm text-slate-600 leading-relaxed">
                   {settings.aboutDescription}
                 </p>
               </div>
@@ -641,41 +654,43 @@ export const WebsiteView: React.FC = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => recordContactClick('about_whatsapp')}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-sm hover:brightness-110 transition whitespace-nowrap shrink-0 self-start md:self-center"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#1FB858] transition whitespace-nowrap shrink-0 self-start md:self-center shadow-sm"
               >
-                <MessageCircle className="w-4 h-4" />
+                <WhatsAppLogo className="w-4 h-4" />
                 <span>Chat on WhatsApp</span>
               </a>
             </div>
 
             {team.length > 0 && (
-              <div className="space-y-3 pt-2 border-t border-white/10">
-                <h3 className="text-sm font-display font-semibold text-white">Team Members</h3>
+              <div className="space-y-3 pt-2 border-t border-slate-200">
+                <h3 className="text-sm font-display font-bold text-[#0F172A]">Team Members</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {team.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-start gap-3 p-3.5 rounded-xl bg-[#050B18]/80 border border-slate-800"
+                      className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200"
                     >
                       {member.avatarUrl ? (
                         <img
                           src={member.avatarUrl}
                           alt={member.name}
                           referrerPolicy="no-referrer"
-                          className="w-11 h-11 rounded-full object-cover border border-cyan-400/40 shrink-0"
+                          className="w-11 h-11 rounded-full object-cover border border-sky-300 shrink-0"
                         />
                       ) : (
-                        <div className="w-11 h-11 rounded-full bg-[#0D254F] border border-cyan-400/30 flex items-center justify-center text-sm font-bold text-[#22D3EE] shrink-0">
+                        <div className="w-11 h-11 rounded-full bg-[#0A1F44] border border-sky-300 flex items-center justify-center text-sm font-bold text-[#22D3EE] shrink-0">
                           {member.name.slice(0, 2).toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-white truncate">
+                        <div className="text-sm font-bold text-[#0F172A] truncate">
                           {member.name}
                         </div>
-                        <div className="text-xs text-[#00E676] truncate">{member.role}</div>
+                        <div className="text-xs font-semibold text-[#16A34A] truncate">
+                          {member.role}
+                        </div>
                         {member.bio && (
-                          <p className="text-xs text-slate-400 mt-1 line-clamp-2">{member.bio}</p>
+                          <p className="text-xs text-slate-600 mt-1 line-clamp-2">{member.bio}</p>
                         )}
                       </div>
                     </div>
@@ -686,31 +701,37 @@ export const WebsiteView: React.FC = () => {
           </section>
         )}
 
-        {/* CONTACT FORM SECTION (Shown on Home, About, and Profile) */}
+        {/* CONTACT FORM SECTION */}
         {(activeTab === 'home' || activeTab === 'about' || activeTab === 'profile') && (
           <section
             id="contact-section"
-            className="rounded-2xl bg-[#0B162C]/85 border border-cyan-500/15 p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6"
+            className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6"
           >
             <div className="lg:col-span-5 space-y-4">
               <div className="flex items-center gap-2">
-                <span className="w-1 h-5 rounded-full bg-[#00E676]" aria-hidden="true" />
-                <h2 className="text-lg sm:text-xl font-display font-bold text-white">
+                <span className="w-1 h-5 rounded-full bg-[#25D366]" aria-hidden="true" />
+                <h2 className="text-lg sm:text-xl font-display font-bold text-[#0F172A]">
                   Send a Message
                 </h2>
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
                 Need a custom website, e-commerce store, or web app? Send your requirements directly
                 to our team or reach us instantly on WhatsApp.
               </p>
 
-              <div className="space-y-2.5 text-xs sm:text-sm text-slate-200 pt-1">
+              <div className="space-y-2.5 text-xs sm:text-sm text-slate-700 pt-1">
+                <a
+                  href={generalWhatsAppHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => recordContactClick('contact_section_whatsapp')}
+                  className="inline-flex items-center gap-2.5 hover:text-[#16A34A] transition"
+                >
+                  <Phone className="w-4 h-4 text-[#25D366] shrink-0" />
+                  <span className="font-mono font-semibold">{settings.whatsappNumber}</span>
+                </a>
                 <div className="flex items-center gap-2.5">
-                  <Phone className="w-4 h-4 text-[#00E676] shrink-0" />
-                  <span className="font-mono">{settings.whatsappNumber}</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Globe className="w-4 h-4 text-[#22D3EE] shrink-0" />
+                  <Globe className="w-4 h-4 text-[#0284C7] shrink-0" />
                   <span>{settings.siteName} · {settings.tagline}</span>
                 </div>
               </div>
@@ -725,7 +746,7 @@ export const WebsiteView: React.FC = () => {
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-[#050B18] border border-slate-700/80 text-xs font-medium text-slate-200 hover:border-[#22D3EE] hover:text-white capitalize transition"
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 hover:border-[#0284C7] hover:text-[#0F172A] capitalize transition"
                     >
                       {platform}
                     </a>
@@ -741,14 +762,14 @@ export const WebsiteView: React.FC = () => {
                   placeholder="Your Name *"
                   value={contactForm.name}
                   onChange={(e) => setContactForm((s) => ({ ...s, name: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700/80 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
                 <input
                   type="text"
                   placeholder="Phone / WhatsApp"
                   value={contactForm.phone}
                   onChange={(e) => setContactForm((s) => ({ ...s, phone: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700/80 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
               </div>
 
@@ -758,14 +779,14 @@ export const WebsiteView: React.FC = () => {
                   placeholder="Email Address"
                   value={contactForm.email}
                   onChange={(e) => setContactForm((s) => ({ ...s, email: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700/80 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
                 <input
                   type="text"
                   placeholder="Project Type (e.g., E-Commerce)"
                   value={contactForm.subject}
                   onChange={(e) => setContactForm((s) => ({ ...s, subject: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700/80 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
               </div>
 
@@ -775,12 +796,12 @@ export const WebsiteView: React.FC = () => {
                 placeholder="Tell us about the website you want to build... *"
                 value={contactForm.message}
                 onChange={(e) => setContactForm((s) => ({ ...s, message: e.target.value }))}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700/80 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
               />
 
-              {contactError && <p className="text-xs text-rose-400">{contactError}</p>}
+              {contactError && <p className="text-xs text-rose-600">{contactError}</p>}
               {contactSuccess && (
-                <div className="flex items-center gap-2 text-xs text-[#00E676] bg-[#00E676]/10 border border-[#00E676]/30 rounded-xl px-3.5 py-2.5">
+                <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>Message sent! Our team will contact you shortly.</span>
                 </div>
@@ -789,7 +810,7 @@ export const WebsiteView: React.FC = () => {
               <button
                 type="submit"
                 disabled={sendingContact}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-sm hover:brightness-110 disabled:opacity-60 transition cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#1FB858] disabled:opacity-60 transition cursor-pointer shadow-sm"
               >
                 <Send className="w-4 h-4" />
                 <span>{sendingContact ? 'Sending...' : 'Send Message'}</span>
@@ -800,14 +821,16 @@ export const WebsiteView: React.FC = () => {
 
         {/* DEVELOPER PROFILE TAB */}
         {activeTab === 'profile' && (
-          <section className="rounded-2xl bg-[#0B162C]/90 border border-cyan-500/20 p-5 sm:p-7 space-y-5">
+          <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 sm:p-7 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3.5">
                 <BrandLogo logoUrl={settings.logoUrl} size="lg" siteName={settings.siteName} />
                 <div>
-                  <h2 className="text-xl font-display font-bold text-white">{settings.siteName}</h2>
-                  <p className="text-sm text-[#22D3EE]">{settings.tagline}</p>
-                  <p className="text-xs text-slate-300 mt-1 max-w-md">{settings.description}</p>
+                  <h2 className="text-xl font-display font-bold text-[#0F172A]">
+                    {settings.siteName}
+                  </h2>
+                  <p className="text-sm font-semibold text-[#0284C7]">{settings.tagline}</p>
+                  <p className="text-xs text-slate-600 mt-1 max-w-md">{settings.description}</p>
                 </div>
               </div>
 
@@ -816,29 +839,29 @@ export const WebsiteView: React.FC = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => recordContactClick('profile_whatsapp')}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-sm hover:brightness-110 transition whitespace-nowrap shrink-0 self-start sm:self-center"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#1FB858] transition whitespace-nowrap shrink-0 self-start sm:self-center shadow-sm"
               >
-                <MessageCircle className="w-4 h-4" />
+                <WhatsAppLogo className="w-4 h-4" />
                 <span>Hire MJ LAB</span>
               </a>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-white/10">
-              <div className="p-4 rounded-xl bg-[#050B18] border border-slate-800">
-                <div className="text-xs text-slate-400">Active Portfolio</div>
-                <div className="text-2xl font-display font-bold text-white tabular-nums mt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-xs text-slate-500">Active Portfolio</div>
+                <div className="text-2xl font-display font-bold text-[#0F172A] tabular-nums mt-1">
                   {activeProjects.length}
                 </div>
               </div>
-              <div className="p-4 rounded-xl bg-[#050B18] border border-slate-800">
-                <div className="text-xs text-slate-400">WhatsApp Support</div>
-                <div className="text-sm font-mono font-semibold text-[#00E676] mt-1.5">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-xs text-slate-500">WhatsApp Support</div>
+                <div className="text-sm font-mono font-bold text-[#16A34A] mt-1.5">
                   {settings.whatsappNumber}
                 </div>
               </div>
-              <div className="p-4 rounded-xl bg-[#050B18] border border-slate-800">
-                <div className="text-xs text-slate-400">Live Banners</div>
-                <div className="text-2xl font-display font-bold text-[#22D3EE] tabular-nums mt-1">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-xs text-slate-500">Live Banners</div>
+                <div className="text-2xl font-display font-bold text-[#0284C7] tabular-nums mt-1">
                   {activeBanners.length}
                 </div>
               </div>
@@ -847,17 +870,17 @@ export const WebsiteView: React.FC = () => {
         )}
 
         {/* FOOTER */}
-        <footer className="text-center text-xs text-slate-400 pt-2 pb-4 border-t border-white/5">
+        <footer className="text-center text-xs text-slate-500 pt-3 pb-4 border-t border-slate-200">
           {settings.footerText}
         </footer>
       </div>
 
-      {/* BOTTOM NAVIGATION BAR (Matches Reference Image 1, <= 64px height) */}
+      {/* BOTTOM NAVIGATION BAR */}
       <nav
         aria-label="Primary Navigation"
-        className="fixed bottom-0 inset-x-0 z-40 bg-[#081124]/95 backdrop-blur-md border-t border-cyan-500/20 h-16"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] h-16"
       >
-        <div className="max-w-3xl mx-auto h-full grid grid-cols-4 divide-x divide-white/10">
+        <div className="max-w-3xl mx-auto h-full grid grid-cols-4 divide-x divide-slate-200">
           {(
             [
               { id: 'home', label: 'Home', icon: Home },
@@ -877,15 +900,15 @@ export const WebsiteView: React.FC = () => {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`relative flex flex-col items-center justify-center gap-1 h-full transition cursor-pointer ${
-                  active ? 'text-[#00E676]' : 'text-slate-300 hover:text-white'
+                  active ? 'text-[#16A34A]' : 'text-slate-500 hover:text-[#0F172A]'
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                <span className="text-[11px] font-medium leading-none">{item.label}</span>
+                <span className="text-[11px] font-semibold leading-none">{item.label}</span>
                 {active && (
                   <span
                     aria-hidden="true"
-                    className="absolute bottom-0 w-10 h-0.5 rounded-full bg-[#00E676]"
+                    className="absolute bottom-0 w-10 h-0.5 rounded-full bg-[#16A34A]"
                   />
                 )}
               </button>
@@ -896,12 +919,14 @@ export const WebsiteView: React.FC = () => {
 
       {/* LIVE DEMO & PROJECT DETAILS MODAL */}
       {demoProject && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="max-w-lg w-full rounded-2xl bg-[#0B162C] border border-cyan-500/30 overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-lg w-full rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200">
               <div>
-                <h3 className="text-base font-display font-bold text-white">{demoProject.name}</h3>
-                <p className="text-xs text-[#22D3EE]">
+                <h3 className="text-base font-display font-bold text-[#0F172A]">
+                  {demoProject.name}
+                </h3>
+                <p className="text-xs font-semibold text-[#0284C7]">
                   {demoProject.category}
                   {demoProject.price ? ` · ${demoProject.price}` : ''}
                 </p>
@@ -910,14 +935,14 @@ export const WebsiteView: React.FC = () => {
                 type="button"
                 aria-label="Close modal"
                 onClick={() => setDemoProject(null)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="p-5 space-y-4">
-              <div className="aspect-video rounded-xl overflow-hidden bg-[#050B18] border border-white/10">
+              <div className="aspect-video rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
                 <img
                   src={demoProject.imageUrl}
                   alt={demoProject.name}
@@ -925,7 +950,7 @@ export const WebsiteView: React.FC = () => {
                   className="w-full h-full object-cover"
                 />
               </div>
-              <p className="text-sm text-slate-200 leading-relaxed">{demoProject.description}</p>
+              <p className="text-sm text-slate-600 leading-relaxed">{demoProject.description}</p>
 
               <div className="flex flex-wrap items-center gap-2.5 pt-2">
                 {demoProject.demoUrl && (
@@ -933,7 +958,7 @@ export const WebsiteView: React.FC = () => {
                     href={demoProject.demoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#22D3EE] text-[#050B18] font-bold text-xs sm:text-sm hover:brightness-110 transition"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0284C7] text-white font-bold text-xs sm:text-sm hover:brightness-110 transition"
                   >
                     <ExternalLink className="w-4 h-4" />
                     <span>Open Live URL</span>
@@ -947,7 +972,7 @@ export const WebsiteView: React.FC = () => {
                     setOrderSuccess(false);
                     setOrderProject(target);
                   }}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-xs sm:text-sm hover:brightness-110 transition cursor-pointer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F172A] text-white font-bold text-xs sm:text-sm hover:bg-slate-800 transition cursor-pointer"
                 >
                   <ShoppingCart className="w-4 h-4" />
                   <span>Order Website</span>
@@ -960,9 +985,9 @@ export const WebsiteView: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => recordContactClick('demo_modal_whatsapp', demoProject)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#050B18] border border-slate-600 text-white font-semibold text-xs sm:text-sm hover:border-[#00E676] transition"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-xs sm:text-sm hover:bg-[#1FB858] transition"
                 >
-                  <MessageCircle className="w-4 h-4 text-[#00E676]" />
+                  <WhatsAppLogo className="w-4 h-4" />
                   <span>WhatsApp</span>
                 </a>
               </div>
@@ -973,18 +998,18 @@ export const WebsiteView: React.FC = () => {
 
       {/* ORDER WEBSITE MODAL */}
       {orderProject && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="max-w-md w-full rounded-2xl bg-[#0B162C] border border-cyan-500/30 overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200">
               <div>
-                <h3 className="text-base font-display font-bold text-white">Order Website</h3>
-                <p className="text-xs text-[#00E676]">{orderProject.name}</p>
+                <h3 className="text-base font-display font-bold text-[#0F172A]">Order Website</h3>
+                <p className="text-xs font-semibold text-[#16A34A]">{orderProject.name}</p>
               </div>
               <button
                 type="button"
                 aria-label="Close order modal"
                 onClick={() => setOrderProject(null)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -992,13 +1017,13 @@ export const WebsiteView: React.FC = () => {
 
             {orderSuccess ? (
               <div className="p-6 text-center space-y-4">
-                <div className="w-12 h-12 rounded-full bg-[#00E676]/15 text-[#00E676] flex items-center justify-center mx-auto">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#16A34A] flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
-                <h4 className="text-base font-display font-bold text-white">
+                <h4 className="text-base font-display font-bold text-[#0F172A]">
                   Order Request Received!
                 </h4>
-                <p className="text-xs text-slate-300">
+                <p className="text-xs text-slate-600">
                   Your order for {orderProject.name} has been recorded. You can also chat directly
                   on WhatsApp for instant setup.
                 </p>
@@ -1011,15 +1036,15 @@ export const WebsiteView: React.FC = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => recordContactClick('order_success_whatsapp', orderProject)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-xs"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#25D366] text-white font-bold text-xs"
                   >
-                    <MessageCircle className="w-4 h-4" />
+                    <WhatsAppLogo className="w-4 h-4" />
                     <span>Open WhatsApp</span>
                   </a>
                   <button
                     type="button"
                     onClick={() => setOrderProject(null)}
-                    className="px-4 py-2 rounded-xl bg-[#050B18] border border-slate-700 text-xs text-white cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-slate-100 border border-slate-300 text-xs font-semibold text-slate-800 cursor-pointer"
                   >
                     Close
                   </button>
@@ -1033,7 +1058,7 @@ export const WebsiteView: React.FC = () => {
                   placeholder="Your Full Name *"
                   value={orderForm.clientName}
                   onChange={(e) => setOrderForm((s) => ({ ...s, clientName: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
                 <input
                   type="text"
@@ -1041,20 +1066,20 @@ export const WebsiteView: React.FC = () => {
                   placeholder="WhatsApp Number or Email *"
                   value={orderForm.clientContact}
                   onChange={(e) => setOrderForm((s) => ({ ...s, clientContact: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
                 <textarea
                   rows={3}
                   placeholder="Custom requirements or domain details..."
                   value={orderForm.notes}
                   onChange={(e) => setOrderForm((s) => ({ ...s, notes: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050B18] border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#22D3EE]"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0284C7] focus:bg-white"
                 />
-                {orderError && <p className="text-xs text-rose-400">{orderError}</p>}
+                {orderError && <p className="text-xs text-rose-600">{orderError}</p>}
                 <button
                   type="submit"
                   disabled={sendingOrder}
-                  className="w-full py-2.5 rounded-xl bg-[#00E676] text-[#050B18] font-bold text-sm hover:brightness-110 disabled:opacity-60 transition cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#1FB858] disabled:opacity-60 transition cursor-pointer"
                 >
                   {sendingOrder ? 'Submitting...' : 'Submit Order Request'}
                 </button>

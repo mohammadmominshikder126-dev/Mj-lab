@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS: WebsiteSettings = {
   theme: 'Dark',
   logoUrl: '',
   faviconUrl: '',
-  whatsappNumber: '+8801234567890',
+  whatsappNumber: '+8801923948150',
   aboutTitle: 'Crafting High-Performance Websites for Growing Brands',
   aboutDescription:
     'MJ LAB is a dedicated web development and UI/UX design studio. We build fast, mobile-first websites, custom e-commerce stores, and scalable SaaS dashboards tailored for real client growth.',

@@ -103,7 +103,7 @@ create table if not exists public.website_settings (
   theme text default 'Dark',
   logo_url text default '',
   favicon_url text default '',
-  whatsapp_number text not null default '+8801234567890',
+  whatsapp_number text not null default '+8801923948150',
   about_title text default '',
   about_description text default '',
   footer_text text default '© 2026 MJ LAB. All rights reserved.',

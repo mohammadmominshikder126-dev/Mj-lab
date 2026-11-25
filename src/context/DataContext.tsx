@@ -24,6 +24,7 @@ import {
   getSavedSupabaseConfig,
   saveSupabaseConfig,
 } from '../lib/supabase';
+import { resolveDisplayWhatsAppNumber } from '../lib/whatsapp';
 
 const LOCAL_STORE_KEY = 'mjlab_local_store_v1';
 const ADMIN_PASSCODE_KEY = 'mjlab_admin_passcode';
@@ -46,10 +47,16 @@ function readLocalStore(): LocalStoreData {
     const raw = localStorage.getItem(LOCAL_STORE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<LocalStoreData>;
+      const savedSettings = parsed.settings
+        ? {
+            ...parsed.settings,
+            whatsappNumber: resolveDisplayWhatsAppNumber(parsed.settings.whatsappNumber),
+          }
+        : DEFAULT_SETTINGS;
       return {
         projects: parsed.projects || DEFAULT_PROJECTS,
         banners: parsed.banners || DEFAULT_BANNERS,
-        settings: parsed.settings || DEFAULT_SETTINGS,
+        settings: savedSettings,
         team: parsed.team || DEFAULT_TEAM,
         contacts: parsed.contacts || [],
         visitors: parsed.visitors || [],
@@ -435,7 +442,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             theme: s.theme || 'Dark',
             logoUrl: s.logo_url || '',
             faviconUrl: s.favicon_url || '',
-            whatsappNumber: s.whatsapp_number || DEFAULT_SETTINGS.whatsappNumber,
+            whatsappNumber: resolveDisplayWhatsAppNumber(s.whatsapp_number),
             aboutTitle: s.about_title || DEFAULT_SETTINGS.aboutTitle,
             aboutDescription: s.about_description || DEFAULT_SETTINGS.aboutDescription,
             footerText: s.footer_text || DEFAULT_SETTINGS.footerText,
